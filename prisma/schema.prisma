@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String  
+  passwordHash  String
+  walletAddress String   @unique
+  encryptedKey  String
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  balance      Balance?
+  transactions Transaction[] @relation("UserTransactions")
+}
+
+model Balance {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  encryptedBalance String // Hidden/encrypted balance
+  commitment       String // Hash(commit(balance, nonce))
+  lastUpdated      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  fromAddress String
+  toAddress   String
+  amount      Decimal  @db.Decimal(20, 8)
+  status      String   @default("pending")
+  zkProofHash String
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation("UserTransactions", fields: [userId], references: [id])
+
+  // 🔧 Quan hệ ngược lại
+  zkProof ZkProof?
+}
+
+model ZkProof {
+  id            String   @id @default(uuid())
+  transactionId String   @unique
+  proofData     Json // full ZKP data (json encoded)
+  publicSignals Json // signals needed for verification
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+}
