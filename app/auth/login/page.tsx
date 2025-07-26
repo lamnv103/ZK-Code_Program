@@ -19,20 +19,45 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setIsLoading(true)
 
-    // Simulate login process
-    setTimeout(() => {
-      setIsLoading(false)
-      toast({
-        title: "Đăng nhập thành công!",
-        description: "Ví ZK của bạn đã được tải về và sẵn sàng sử dụng.",
-      })
-      router.push("/")
-    }, 1500)
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || "Đăng nhập thất bại")
+    }
+
+    // ✅ Lưu thông tin user và token vào localStorage
+    localStorage.setItem("user", JSON.stringify(data.user))
+    localStorage.setItem("token", data.token)
+
+    toast({
+      title: "Đăng nhập thành công!",
+      description: "Ví ZK của bạn đã được tải về và sẵn sàng sử dụng.",
+    })
+
+    router.push("/")
+  } catch (error: any) {
+    toast({
+      title: "Lỗi đăng nhập",
+      description: error.message,
+      variant: "destructive",
+    })
+  } finally {
+    setIsLoading(false)
   }
+}
 
   return (
     <div className="container mx-auto px-4 py-8">

@@ -20,20 +20,45 @@ export default function RegisterPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+  
+const handleRegister = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setIsLoading(true)
 
-    // Simulate registration and wallet creation
-    setTimeout(() => {
-      setIsLoading(false)
-      toast({
-        title: "Đăng ký thành công!",
-        description: "Ví ZK của bạn đã được tạo tự động và sẵn sàng sử dụng.",
-      })
-      router.push("/")
-    }, 2000)
+  try {
+    const response = await fetch("/api/auth/register/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, email, password }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || "Đăng ký thất bại")
+    }
+
+    // ✅ Lưu thông tin user vào localStorage
+    localStorage.setItem("user", JSON.stringify(data.user))
+
+    toast({
+      title: "Đăng ký thành công!",
+      description: "Ví ZK đã được tạo và mã hóa an toàn.",
+    })
+
+    router.push("/") // Chuyển về trang chủ
+  } catch (error: any) {
+    toast({
+      title: "Lỗi đăng ký",
+      description: error.message,
+      variant: "destructive",
+    })
+  } finally {
+    setIsLoading(false)
   }
+}
 
   return (
     <div className="container mx-auto px-4 py-8">

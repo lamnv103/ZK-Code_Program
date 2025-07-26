@@ -1,9 +1,27 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Shield, Eye, EyeOff, Zap } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface User {
+  name: string
+  email: string
+  walletAddress: string
+}
+
 export default function HomePage() {
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const userData = localStorage.getItem("user")
+    if (userData) {
+      setUser(JSON.parse(userData))
+    }
+  }, [])
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -71,22 +89,30 @@ export default function HomePage() {
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
+                <span>Tên người dùng:</span>
+                <span className="font-semibold">{user?.name || "Chưa đăng nhập"}</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span>Địa chỉ ví:</span>
-                <code className="bg-white px-2 py-1 rounded text-sm">0xabc...7890</code>
+                <code className="bg-white px-2 py-1 rounded text-sm">
+                  {user?.walletAddress || "Không có"}
+                </code>
               </div>
               <div className="flex items-center justify-between">
                 <span>Số dư:</span>
                 <span className="text-muted-foreground">[Không hiển thị]</span>
               </div>
-              <div className="bg-green-100 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 text-green-800">
-                  <Zap className="w-4 h-4" />
-                  <span className="font-medium">✅ Tài khoản của bạn đã được chứng minh đủ điều kiện chuyển tiền.</span>
+              {user && (
+                <div className="bg-green-100 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-green-800">
+                    <Zap className="w-4 h-4" />
+                    <span className="font-medium">✅ Bạn đủ điều kiện chuyển tiền.</span>
+                  </div>
+                  <p className="text-sm text-green-700 mt-1">
+                    Xác nhận bằng ZKP: bạn có đủ số dư nhưng không tiết lộ số dư thực.
+                  </p>
                 </div>
-                <p className="text-sm text-green-700 mt-1">
-                  Dựa trên Zero-Knowledge Proof, hệ thống xác nhận bạn có đủ số dư mà không cần biết số tiền cụ thể.
-                </p>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
