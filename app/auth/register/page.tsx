@@ -11,6 +11,7 @@ import { Shield, UserPlus, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function RegisterPage() {
   const [name, setName] = useState("")
@@ -19,46 +20,58 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const { login } = useAuth()
 
-  
-const handleRegister = async (e: React.FormEvent) => {
-  e.preventDefault()
-  setIsLoading(true)
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
 
-  try {
-    const response = await fetch("/api/auth/register/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name, email, password }),
-    })
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, email, password }),
+      })
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!response.ok) {
-      throw new Error(data.error || "Đăng ký thất bại")
+      if (!response.ok) {
+        throw new Error(data.error || "Đăng ký thất bại")
+      }
+
+      // Auto login after successful registration
+      const loginResponse = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const loginData = await loginResponse.json()
+
+      if (loginResponse.ok) {
+        login(loginData.user, loginData.token)
+      }
+
+      toast({
+        title: "Đăng ký thành công!",
+        description: "Ví ZK của bạn đã được tạo tự động và sẵn sàng sử dụng.",
+      })
+
+      router.push("/")
+    } catch (error) {
+      toast({
+        title: "Lỗi đăng ký",
+        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi đăng ký",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-
-    // ✅ Lưu thông tin user vào localStorage
-    localStorage.setItem("user", JSON.stringify(data.user))
-
-    toast({
-      title: "Đăng ký thành công!",
-      description: "Ví ZK đã được tạo và mã hóa an toàn.",
-    })
-
-    router.push("/") // Chuyển về trang chủ
-  } catch (error: any) {
-    toast({
-      title: "Lỗi đăng ký",
-      description: error.message,
-      variant: "destructive",
-    })
-  } finally {
-    setIsLoading(false)
   }
-}
 
   return (
     <div className="container mx-auto px-4 py-8">

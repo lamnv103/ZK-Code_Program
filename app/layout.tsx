@@ -4,13 +4,13 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { Navbar } from "@/components/navbar"
 import { Toaster } from "@/components/ui/toaster"
+import { AuthProvider } from "@/contexts/auth-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "zkTransfer - Private Money Transfer",
   description: "Anonymous balance, public transfers with Zero-Knowledge Proof",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -21,9 +21,11 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={inter.className}>
-        <Navbar />
-        <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">{children}</main>
-        <Toaster />
+        <AuthProvider>
+          <Navbar />
+          <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">{children}</main>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   )

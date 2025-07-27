@@ -8,27 +8,33 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  name          String
+  id            String        @id @default(uuid())
+  email         String        @unique
+  name          String?       // Made optional to match existing structure
   passwordHash  String
-  walletAddress String   @unique
-  encryptedKey  String
-  status        String   @default("active")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  balance      Balance?
-  transactions Transaction[] @relation("UserTransactions")
+  walletAddress String        @unique
+  encryptedKey  String        @db.Text // Store encrypted private key
+  transferPin   String?       @db.Text // Encrypted transfer PIN
+  status        String        @default("active") // active, suspended, etc.
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  // Relations
+  balance       Balance?
+  transactions  Transaction[] @relation("UserTransactions")
+  deposits      Deposit[]     // New relation for deposits
+  sentTransfers     Transfer[] @relation("SentTransfers")
+  receivedTransfers Transfer[] @relation("ReceivedTransfers")
 }
 
 model Balance {
   id               String   @id @default(uuid())
   userId           String   @unique
-  encryptedBalance String // Hidden/encrypted balance
-  commitment       String // Hash(commit(balance, nonce))
+  encryptedBalance String   @db.Text // Hidden/encrypted balance
+  commitment       String   @db.Text // Hash(commit(balance, nonce))
   lastUpdated      DateTime @default(now())
-
+  
+  // Relations
   user User @relation(fields: [userId], references: [id])
 }
 
@@ -36,24 +42,67 @@ model Transaction {
   id          String   @id @default(uuid())
   fromAddress String
   toAddress   String
-  amount      Decimal  @db.Decimal(20, 8)
-  status      String   @default("pending")
-  zkProofHash String
+  amount      Decimal  @db.Decimal(20, 8) // Keep high precision for crypto
+  status      String   @default("pending") // pending, verified, failed
+  zkProofHash String?  // Made optional and unique for quick lookup
   createdAt   DateTime @default(now())
-
-  userId String
-  user   User   @relation("UserTransactions", fields: [userId], references: [id])
-
-  // 🔧 Quan hệ ngược lại
+  updatedAt   DateTime @updatedAt // Added updatedAt field
+  userId      String
+  
+  // Relations
+  user    User     @relation("UserTransactions", fields: [userId], references: [id])
   zkProof ZkProof?
+  
+  @@index([userId, status]) // Index for better query performance
+  @@index([createdAt])      // Index for sorting by date
 }
 
 model ZkProof {
   id            String   @id @default(uuid())
   transactionId String   @unique
-  proofData     Json // full ZKP data (json encoded)
-  publicSignals Json // signals needed for verification
+  proofData     Json     @db.Json // Full ZKP data (json encoded)
+  publicSignals Json     @db.Json // Signals needed for verification
   createdAt     DateTime @default(now())
-
+  
+  // Relations
   transaction Transaction @relation(fields: [transactionId], references: [id])
+}
+
+// New model for deposit functionality
+model Deposit {
+  id               String   @id @default(uuid())
+  userId           String
+  amount           Decimal  @db.Decimal(20, 8) // Match Transaction precision
+  status           String   @default("pending") // pending, completed, failed
+  virtualQrCodeUrl String?  @db.Text // URL to the virtual QR code image
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+  
+  @@index([userId, status]) // Index for better query performance
+  @@index([createdAt])      // Index for sorting by date
+}
+
+// New model for transfers between users
+model Transfer {
+  id              String   @id @default(uuid())
+  fromUserId      String
+  toUserId        String
+  fromWalletAddress String
+  toWalletAddress   String
+  amount          Decimal  @db.Decimal(20, 8)
+  status          String   @default("pending") // pending, completed, failed
+  description     String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  fromUser User @relation("SentTransfers", fields: [fromUserId], references: [id])
+  toUser   User @relation("ReceivedTransfers", fields: [toUserId], references: [id])
+  
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
+  @@index([createdAt])
 }

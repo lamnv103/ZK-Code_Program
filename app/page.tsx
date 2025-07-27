@@ -1,27 +1,9 @@
-"use client"
-
-import { useEffect, useState } from "react"
-import { Shield, Eye, EyeOff, Zap } from "lucide-react"
+import { Shield, Eye, EyeOff, Zap, Wallet, Settings } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
-interface User {
-  name: string
-  email: string
-  walletAddress: string
-}
-
 export default function HomePage() {
-  const [user, setUser] = useState<User | null>(null)
-
-  useEffect(() => {
-    const userData = localStorage.getItem("user")
-    if (userData) {
-      setUser(JSON.parse(userData))
-    }
-  }, [])
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -38,7 +20,7 @@ export default function HomePage() {
               <Link href="/transfer">Bắt đầu chuyển tiền</Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/security">Tìm hiểu ZKP</Link>
+              <Link href="/balance">Xem số dư</Link>
             </Button>
           </div>
         </div>
@@ -51,7 +33,7 @@ export default function HomePage() {
                 <EyeOff className="w-6 h-6 text-blue-600" />
               </div>
               <CardTitle>Số dư ẩn danh</CardTitle>
-              <CardDescription>Số dư tài khoản của bạn hoàn toàn bí mật, không ai có thể xem được</CardDescription>
+              <CardDescription>Số dư tài khoản của bạn hoàn toàn bí mật, chỉ hiển thị khi có mã PIN</CardDescription>
             </CardHeader>
           </Card>
 
@@ -78,41 +60,87 @@ export default function HomePage() {
           </Card>
         </div>
 
-        {/* Account Status */}
-        <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-green-600" />
-              Trạng thái tài khoản
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span>Tên người dùng:</span>
-                <span className="font-semibold">{user?.name || "Chưa đăng nhập"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Địa chỉ ví:</span>
-                <code className="bg-white px-2 py-1 rounded text-sm">
-                  {user?.walletAddress || "Không có"}
-                </code>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Số dư:</span>
-                <span className="text-muted-foreground">[Không hiển thị]</span>
-              </div>
-              {user && (
+        {/* Quick Actions */}
+        <div className="grid md:grid-cols-2 gap-6 mb-12">
+          <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-blue-600" />
+                Quản lý tài khoản
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button asChild className="w-full bg-transparent" variant="outline">
+                <Link href="/balance" className="flex items-center gap-1">
+                  <Eye className="w-4 h-4 mr-2" />
+                  Xem số dư (cần PIN)
+                </Link>
+              </Button>
+              <Button asChild className="w-full bg-transparent" variant="outline">
+                <Link href="/deposit" className="flex items-center gap-1">
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Nạp tiền vào ví
+                </Link>
+              </Button>
+              <Button asChild className="w-full bg-transparent" variant="outline">
+                <Link href="/settings" className="flex items-center gap-1">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Đổi mã PIN
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-green-600" />
+                Trạng thái bảo mật
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span>Địa chỉ ví:</span>
+                  <code className="bg-white px-2 py-1 rounded text-sm">0xabc...7890</code>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Số dư:</span>
+                  <span className="text-muted-foreground">[Cần PIN để xem]</span>
+                </div>
                 <div className="bg-green-100 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-green-800">
                     <Zap className="w-4 h-4" />
-                    <span className="font-medium">✅ Bạn đủ điều kiện chuyển tiền.</span>
+                    <span className="font-medium">✅ Tài khoản được bảo vệ bởi mã PIN</span>
                   </div>
                   <p className="text-sm text-green-700 mt-1">
-                    Xác nhận bằng ZKP: bạn có đủ số dư nhưng không tiết lộ số dư thực.
+                    Số dư được mã hóa và chỉ hiển thị khi xác thực mã PIN thành công
                   </p>
                 </div>
-              )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Security Info */}
+        <Card className="bg-blue-50 border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-blue-800">Về bảo mật mã PIN</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-blue-700 text-sm">
+              <p>
+                • <strong>Xem số dư:</strong> Yêu cầu mã PIN để giải mã và hiển thị số dư thực tế
+              </p>
+              <p>
+                • <strong>Chuyển tiền:</strong> Mã PIN được sử dụng để xác thực mọi giao dịch
+              </p>
+              <p>
+                • <strong>Đổi PIN:</strong> Có thể thay đổi mã PIN bất kỳ lúc nào trong cài đặt
+              </p>
+              <p>
+                • <strong>Bảo mật:</strong> Mã PIN không được lưu trữ dưới dạng plain text
+              </p>
             </div>
           </CardContent>
         </Card>

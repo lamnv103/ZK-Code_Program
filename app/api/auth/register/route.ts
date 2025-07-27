@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     const { email, password, name } = await request.json()
 
+    // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email },
     })
@@ -17,34 +18,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User already exists" }, { status: 400 })
     }
 
+    // Hash password
     const passwordHash = await bcrypt.hash(password, 12)
+
+    // Generate wallet address (simplified)
     const walletAddress = "0x" + crypto.randomBytes(20).toString("hex")
 
+    // Generate and encrypt private key
     const privateKey = crypto.randomBytes(32).toString("hex")
-    const iv = crypto.randomBytes(16)
-    const key = crypto.createHash("sha256").update(password).digest()
-    const cipher = crypto.createCipheriv("aes-256-cbc", key, iv)
-    let encryptedKey = cipher.update(privateKey, "utf8", "hex")
-    encryptedKey += cipher.final("hex")
+    const encryptedKey = crypto.createCipher("aes-256-cbc", password).update(privateKey, "utf8", "hex")
 
-    // Encrypt balance
-    const balanceKey = crypto.createHash("sha256").update(privateKey).digest()
-    const balanceIv = crypto.randomBytes(16)
-    const balanceCipher = crypto.createCipheriv("aes-256-cbc", balanceKey, balanceIv)
-    let encryptedBalance = balanceCipher.update("1000", "utf8", "hex")
-    encryptedBalance += balanceCipher.final("hex")
-
+    // Create user with balance
     const user = await prisma.user.create({
       data: {
-        name,
         email,
+        name: name || null,
         passwordHash,
         walletAddress,
         encryptedKey,
         status: "active",
         balance: {
           create: {
-            encryptedBalance,
+            encryptedBalance: crypto.createCipher("aes-256-cbc", privateKey).update("1000", "utf8", "hex"), // Initial balance of 1000
             commitment: crypto
               .createHash("sha256")
               .update("1000" + crypto.randomBytes(16).toString("hex"))
@@ -57,6 +52,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Remove sensitive data
     const { passwordHash: _, encryptedKey: __, ...safeUser } = user
 
     return NextResponse.json({

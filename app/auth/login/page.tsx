@@ -11,6 +11,7 @@ import { Shield, LogIn } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -18,46 +19,46 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const { login } = useAuth()
 
-const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault()
-  setIsLoading(true)
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
 
-  try {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password }),
-    })
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!response.ok) {
-      throw new Error(data.error || "Đăng nhập thất bại")
+      if (!response.ok) {
+        throw new Error(data.error || "Đăng nhập thất bại")
+      }
+
+      // Use auth context to set user data
+      login(data.user, data.token)
+
+      toast({
+        title: "Đăng nhập thành công!",
+        description: "Ví ZK của bạn đã được tải về và sẵn sàng sử dụng.",
+      })
+
+      router.push("/")
+    } catch (error) {
+      toast({
+        title: "Lỗi đăng nhập",
+        description: error instanceof Error ? error.message : "Có lỗi xảy ra khi đăng nhập",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-
-    // ✅ Lưu thông tin user và token vào localStorage
-    localStorage.setItem("user", JSON.stringify(data.user))
-    localStorage.setItem("token", data.token)
-
-    toast({
-      title: "Đăng nhập thành công!",
-      description: "Ví ZK của bạn đã được tải về và sẵn sàng sử dụng.",
-    })
-
-    router.push("/")
-  } catch (error: any) {
-    toast({
-      title: "Lỗi đăng nhập",
-      description: error.message,
-      variant: "destructive",
-    })
-  } finally {
-    setIsLoading(false)
   }
-}
 
   return (
     <div className="container mx-auto px-4 py-8">
