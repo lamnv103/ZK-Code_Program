@@ -45,15 +45,27 @@
     "@shadcn/ui": "^0.0.4",
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^3.0.2",
+<<<<<<< HEAD
+=======
+    "circomlibjs": "^0.1.7",
+>>>>>>> 063705e (Initial commit)
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "8.5.1",
+<<<<<<< HEAD
     "input-otp": "1.4.1",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.454.0",
     "next": "14.2.16",
+=======
+    "ffjavascript": "^0.3.1",
+    "input-otp": "1.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.454.0",
+    "next": "^14.2.30",
+>>>>>>> 063705e (Initial commit)
     "next-themes": "^0.4.4",
     "react": "^18",
     "react-day-picker": "8.10.1",
@@ -62,6 +74,10 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
     "shadcn": "latest",
+<<<<<<< HEAD
+=======
+    "snarkjs": "^0.7.5",
+>>>>>>> 063705e (Initial commit)
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
@@ -70,6 +86,10 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+<<<<<<< HEAD
+=======
+    "@types/circomlibjs": "^0.1.6",
+>>>>>>> 063705e (Initial commit)
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22",
     "@types/react": "^18",

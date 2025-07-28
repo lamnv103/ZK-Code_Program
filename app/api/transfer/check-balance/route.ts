@@ -1,5 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
+<<<<<<< HEAD
 import { PrismaClient, Prisma } from "@prisma/client"
+=======
+import { PrismaClient } from "@prisma/client"
+import { Decimal } from "@prisma/client/runtime/library"
+>>>>>>> 063705e (Initial commit)
 import jwt from "jsonwebtoken"
 import { simpleDecrypt } from "@/lib/encryption"
 
@@ -18,12 +23,19 @@ export async function POST(request: NextRequest) {
 
     const { amount } = await request.json()
 
+<<<<<<< HEAD
     // Validate input
+=======
+>>>>>>> 063705e (Initial commit)
     if (!amount || Number.parseFloat(amount) <= 0) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 })
     }
 
+<<<<<<< HEAD
     const transferAmount = new Prisma.Decimal(amount.toString())
+=======
+    const transferAmount = new Decimal(amount.toString())
+>>>>>>> 063705e (Initial commit)
 
     // 2. Fetch user and their balance
     const user = await prisma.user.findUnique({
@@ -36,15 +48,25 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Decrypt and check balance
+<<<<<<< HEAD
     let currentBalance = new Prisma.Decimal("1000") // Default balance
+=======
+    let currentBalance = new Decimal("1000") // Default balance
+>>>>>>> 063705e (Initial commit)
 
     if (user.balance?.encryptedBalance) {
       try {
         const decryptedBalance = simpleDecrypt(user.balance.encryptedBalance)
+<<<<<<< HEAD
         currentBalance = new Prisma.Decimal(decryptedBalance)
       } catch (decryptionError) {
         console.warn("Failed to decrypt balance, using default:", decryptionError)
         // Keep default balance if decryption fails
+=======
+        currentBalance = new Decimal(decryptedBalance)
+      } catch (decryptionError) {
+        console.warn("Failed to decrypt balance, using default:", decryptionError)
+>>>>>>> 063705e (Initial commit)
       }
     }
 
@@ -56,7 +78,13 @@ export async function POST(request: NextRequest) {
       hasSufficientBalance,
       currentBalance: currentBalance.toString(),
       transferAmount: transferAmount.toString(),
+<<<<<<< HEAD
       message: hasSufficientBalance ? "Số dư đủ để thực hiện giao dịch" : "Số dư không đủ để thực hiện giao dịch",
+=======
+      message: hasSufficientBalance
+        ? "Số dư đủ để thực hiện giao dịch"
+        : "Số dư không đủ để thực hiện giao dịch",
+>>>>>>> 063705e (Initial commit)
     })
   } catch (error) {
     console.error("Balance check error:", error)
