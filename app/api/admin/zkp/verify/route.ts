@@ -1,89 +1,41 @@
-import { NextResponse } from "next/server"
-<<<<<<< HEAD
-
-export async function POST(request: Request) {
-  const { proofId, proof, publicInputs } = await request.json()
-
-  // Simulate ZKP verification process
-  const isValid = Math.random() > 0.1 // 90% success rate
-
-  // Simulate verification time
-  await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 2000))
-
-  if (isValid) {
-    return NextResponse.json({
-      success: true,
-      proofId,
-      status: "verified",
-      verificationTime: (1000 + Math.random() * 2000).toFixed(0) + "ms",
-      message: "ZK Proof verified successfully",
-    })
-  } else {
-    return NextResponse.json(
-      {
-        success: false,
-        proofId,
-        status: "failed",
-        error: "Invalid proof or insufficient balance",
-        message: "ZK Proof verification failed",
-      },
-      { status: 400 },
-    )
-=======
+import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const { proofId } = await request.json()
 
-    // Find the proof
-    const zkProof = await prisma.zkProof.findUnique({
+    if (!proofId) {
+      return NextResponse.json({ error: "Proof ID is required" }, { status: 400 })
+    }
+
+    // Update proof verification status
+    const updatedProof = await prisma.zkProof.update({
       where: { id: proofId },
-      include: { transaction: true },
+      data: {
+        verificationTime: Math.floor(Math.random() * 1000) + 1000, // Simulated verification time
+        updatedAt: new Date(),
+      },
+      include: {
+        transaction: true,
+      },
     })
 
-    if (!zkProof) {
-      return NextResponse.json({ error: "Proof not found" }, { status: 404 })
-    }
+    // Update transaction status
+    await prisma.transaction.update({
+      where: { id: updatedProof.transactionId },
+      data: { status: "verified" },
+    })
 
-    // Simulate verification process
-    const isValid = Math.random() > 0.1 // 90% success rate
-    const verificationTime = 1000 + Math.random() * 2000
-
-    // Simulate verification delay
-    await new Promise((resolve) => setTimeout(resolve, verificationTime))
-
-    if (isValid) {
-      // Update transaction status if needed
-      await prisma.transaction.update({
-        where: { id: zkProof.transactionId },
-        data: { status: "verified" },
-      })
-
-      return NextResponse.json({
-        success: true,
-        proofId,
-        status: "verified",
-        verificationTime: Math.round(verificationTime) + "ms",
-        message: "ZK Proof verified successfully",
-      })
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          proofId,
-          status: "failed",
-          error: "Invalid proof or insufficient balance",
-          message: "ZK Proof verification failed",
-        },
-        { status: 400 },
-      )
-    }
+    return NextResponse.json({
+      success: true,
+      message: "ZK proof verified successfully",
+      proof: updatedProof,
+    })
   } catch (error) {
     console.error("ZKP verification error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
->>>>>>> 063705e (Initial commit)
   }
 }

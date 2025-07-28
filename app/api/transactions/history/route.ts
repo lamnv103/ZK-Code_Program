@@ -18,39 +18,6 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
-<<<<<<< HEAD
-    const limit = Number.parseInt(searchParams.get("limit") || "10")
-    const status = searchParams.get("status")
-
-    // Build where clause
-    const where: any = { userId: decoded.userId }
-    if (status) {
-      where.status = status
-    }
-
-    // Get transactions
-    const transactions = await prisma.transaction.findMany({
-      where,
-      include: {
-        zkProof: {
-          select: {
-            id: true,
-            createdAt: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
-    })
-
-    // Get total count
-    const total = await prisma.transaction.count({ where })
-
-    return NextResponse.json({
-      success: true,
-      transactions,
-=======
     const limit = Number.parseInt(searchParams.get("limit") || "20")
     const status = searchParams.get("status")
     const type = searchParams.get("type")
@@ -188,7 +155,6 @@ export async function GET(request: NextRequest) {
       success: true,
       transactions: paginatedTransactions,
       stats,
->>>>>>> 063705e (Initial commit)
       pagination: {
         page,
         limit,

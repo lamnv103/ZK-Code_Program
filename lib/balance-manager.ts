@@ -1,144 +1,205 @@
-import crypto from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client"
+import { simpleEncrypt, simpleDecrypt, generateCommitment } from "./encryption"
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient()
 
 export interface BalanceInfo {
-  balance: bigint;
-  commitment: string;
-  nonce: bigint;
-  salt: bigint;
+  userId: string
+  encryptedBalance: string
+  decryptedBalance: string
+  commitment: string
+  lastUpdated: Date
 }
 
 export class BalanceManager {
-  private static instance: BalanceManager;
+  private static instance: BalanceManager
 
   static getInstance(): BalanceManager {
     if (!BalanceManager.instance) {
-      BalanceManager.instance = new BalanceManager();
+      BalanceManager.instance = new BalanceManager()
     }
-    return BalanceManager.instance;
+    return BalanceManager.instance
   }
 
-  // 🔐 AES Encrypt
-  private encrypt(data: string, key: string): string {
-    const iv = crypto.randomBytes(16);
-    const hashedKey = crypto.createHash("sha256").update(key).digest();
-    const cipher = crypto.createCipheriv("aes-256-cbc", hashedKey, iv);
-    const encrypted = Buffer.concat([cipher.update(data, "utf8"), cipher.final()]);
-    return iv.toString("hex") + ":" + encrypted.toString("hex");
-  }
-
-  // 🔓 AES Decrypt (an toàn hơn)
-  private decrypt(encryptedData: string, key: string): string {
-    if (!encryptedData || typeof encryptedData !== "string") {
-      throw new Error("Encrypted data is missing or invalid");
-    }
-    if (!key || typeof key !== "string") {
-      throw new Error("Decryption key is missing or invalid");
-    }
-
-    const parts = encryptedData.split(":");
-    if (parts.length !== 2) {
-      throw new Error("Invalid encrypted data format");
-    }
-
-    const [ivHex, encryptedHex] = parts;
-    const iv = Buffer.from(ivHex, "hex");
-    const encrypted = Buffer.from(encryptedHex, "hex");
-    const hashedKey = crypto.createHash("sha256").update(key).digest();
-    const decipher = crypto.createDecipheriv("aes-256-cbc", hashedKey, iv);
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    return decrypted.toString("utf8");
-  }
-
-  // 📦 Lấy số dư người dùng
-  async getUserBalance(userId: string, userKey: string): Promise<BalanceInfo> {
+  // Get user balance (decrypted)
+  async getUserBalance(userId: string): Promise<BalanceInfo | null> {
     try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { balance: true },
-      });
+      const balance = await prisma.balance.findUnique({
+        where: { userId },
+      })
 
-      if (!user) throw new Error("User not found");
+      if (!balance) {
+        return null
+      }
 
-      // Mặc định nếu chưa có dữ liệu
-      let balance = BigInt("1000000000000000000000"); // 1000 ETH
-      let nonce = BigInt("0x" + crypto.randomBytes(16).toString("hex"));
-      let salt = BigInt("0x" + crypto.randomBytes(16).toString("hex"));
-
-      if (user.balance?.encryptedBalance && typeof user.balance.encryptedBalance === "string") {
+      let decryptedBalance = "0"
+      if (balance.encryptedBalance) {
         try {
-          const decrypted = this.decrypt(user.balance.encryptedBalance, userKey);
-          const data = JSON.parse(decrypted);
-          balance = BigInt(data.balance);
-          nonce = BigInt(data.nonce);
-          salt = BigInt(data.salt);
-        } catch (err) {
-          console.warn("⚠️ Giải mã thất bại, sử dụng mặc định:", err);
+          decryptedBalance = simpleDecrypt(balance.encryptedBalance)
+        } catch (error) {
+          console.warn("Failed to decrypt balance for user:", userId)
+          decryptedBalance = "1000" // Default demo balance
         }
       }
 
       return {
-        balance,
-        commitment: user.balance?.commitment || "",
-        nonce,
-        salt,
-      };
+        userId: balance.userId,
+        encryptedBalance: balance.encryptedBalance,
+        decryptedBalance,
+        commitment: balance.commitment,
+        lastUpdated: balance.lastUpdated,
+      }
     } catch (error) {
-      console.error("❌ Lỗi khi lấy số dư:", error);
-      throw new Error("Không thể lấy thông tin số dư");
+      console.error("Error getting user balance:", error)
+      return null
     }
   }
 
-  // 🔁 Cập nhật số dư
-  async updateUserBalance(
-    userId: string,
-    userKey: string,
-    newBalance: bigint,
-    newNonce: bigint,
-    salt: bigint,
-    newCommitment: string,
-  ): Promise<void> {
+  // Update user balance
+  async updateUserBalance(userId: string, newBalance: string, commitment?: string): Promise<boolean> {
     try {
-      const data = {
-        balance: newBalance.toString(),
-        nonce: newNonce.toString(),
-        salt: salt.toString(),
-      };
-
-      const encrypted = this.encrypt(JSON.stringify(data), userKey);
+      const encryptedBalance = simpleEncrypt(newBalance)
+      const balanceCommitment = commitment || generateCommitment(newBalance)
 
       await prisma.balance.upsert({
         where: { userId },
         update: {
-          encryptedBalance: encrypted,
-          commitment: newCommitment,
+          encryptedBalance,
+          commitment: balanceCommitment,
           lastUpdated: new Date(),
         },
         create: {
           userId,
-          encryptedBalance: encrypted,
-          commitment: newCommitment,
+          encryptedBalance,
+          commitment: balanceCommitment,
         },
-      });
+      })
 
-      console.log(`✅ Đã cập nhật số dư cho user ${userId}`);
+      console.log(`✅ Updated balance for user ${userId}: ${newBalance} ETH`)
+      return true
     } catch (error) {
-      console.error("❌ Lỗi cập nhật số dư:", error);
-      throw new Error("Không thể cập nhật số dư");
+      console.error("Error updating user balance:", error)
+      return false
     }
   }
 
-  // 🔐 Tạo commitment hash từ balance, nonce, salt
-  createCommitment(balance: bigint, nonce: bigint, salt: bigint): string {
-    const data = `${balance}-${nonce}-${salt}`;
-    return crypto.createHash("sha256").update(data).digest("hex");
+  // Check if user has sufficient balance
+  async checkSufficientBalance(
+    userId: string,
+    amount: string,
+  ): Promise<{
+    hasSufficientBalance: boolean
+    currentBalance: string
+    message: string
+  }> {
+    try {
+      const balanceInfo = await this.getUserBalance(userId)
+
+      if (!balanceInfo) {
+        return {
+          hasSufficientBalance: false,
+          currentBalance: "0",
+          message: "Balance not found",
+        }
+      }
+
+      const currentBalance = new Prisma.Decimal(balanceInfo.decryptedBalance)
+      const transferAmount = new Prisma.Decimal(amount)
+
+      const hasSufficientBalance = currentBalance.gte(transferAmount)
+
+      return {
+        hasSufficientBalance,
+        currentBalance: currentBalance.toString(),
+        message: hasSufficientBalance ? "Sufficient balance available" : "Insufficient balance for transfer",
+      }
+    } catch (error) {
+      console.error("Error checking balance:", error)
+      return {
+        hasSufficientBalance: false,
+        currentBalance: "0",
+        message: "Error checking balance",
+      }
+    }
   }
 
-  // ✅ Xác minh commitment
-  validateCommitment(balance: bigint, nonce: bigint, salt: bigint, expectedCommitment: string): boolean {
-    const actual = this.createCommitment(balance, nonce, salt);
-    return actual === expectedCommitment;
+  // Transfer balance between users
+  async transferBalance(
+    fromUserId: string,
+    toUserId: string,
+    amount: string,
+  ): Promise<{
+    success: boolean
+    newFromBalance: string
+    newToBalance: string
+    message: string
+  }> {
+    try {
+      const [fromBalance, toBalance] = await Promise.all([
+        this.getUserBalance(fromUserId),
+        this.getUserBalance(toUserId),
+      ])
+
+      if (!fromBalance) {
+        return {
+          success: false,
+          newFromBalance: "0",
+          newToBalance: "0",
+          message: "Sender balance not found",
+        }
+      }
+
+      const senderBalance = new Prisma.Decimal(fromBalance.decryptedBalance)
+      const transferAmount = new Prisma.Decimal(amount)
+
+      if (senderBalance.lt(transferAmount)) {
+        return {
+          success: false,
+          newFromBalance: senderBalance.toString(),
+          newToBalance: toBalance?.decryptedBalance || "0",
+          message: "Insufficient balance",
+        }
+      }
+
+      const recipientBalance = new Prisma.Decimal(toBalance?.decryptedBalance || "0")
+      const newFromBalance = senderBalance.minus(transferAmount)
+      const newToBalance = recipientBalance.plus(transferAmount)
+
+      // Update both balances in a transaction
+      await prisma.$transaction(async (tx) => {
+        await this.updateUserBalance(fromUserId, newFromBalance.toString())
+        await this.updateUserBalance(toUserId, newToBalance.toString())
+      })
+
+      return {
+        success: true,
+        newFromBalance: newFromBalance.toString(),
+        newToBalance: newToBalance.toString(),
+        message: "Transfer completed successfully",
+      }
+    } catch (error) {
+      console.error("Error transferring balance:", error)
+      return {
+        success: false,
+        newFromBalance: "0",
+        newToBalance: "0",
+        message: "Transfer failed",
+      }
+    }
+  }
+
+  // Add balance (deposit)
+  async addBalance(userId: string, amount: string): Promise<boolean> {
+    try {
+      const balanceInfo = await this.getUserBalance(userId)
+      const currentBalance = new Prisma.Decimal(balanceInfo?.decryptedBalance || "0")
+      const addAmount = new Prisma.Decimal(amount)
+      const newBalance = currentBalance.plus(addAmount)
+
+      return await this.updateUserBalance(userId, newBalance.toString())
+    } catch (error) {
+      console.error("Error adding balance:", error)
+      return false
+    }
   }
 }

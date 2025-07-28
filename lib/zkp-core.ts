@@ -1,161 +1,188 @@
-import * as snarkjs from "snarkjs";
-import * as circomlib from "circomlibjs"
-import crypto from "crypto";
+import * as snarkjs from "snarkjs"
+import { poseidon } from "circomlib"
 
 export interface ZKProofInput {
-  balance: bigint;
-  transferAmount: bigint;
-  nonce: bigint;
-  salt: bigint;
+  balance: string
+  nonce: string
+  salt: string
+  transferAmount: string
+  balanceCommitment: string
+  nullifierHash: string
 }
 
 export interface ZKProofOutput {
-  proof: {
-    pi_a: string[];
-    pi_b: string[][];
-    pi_c: string[];
-  };
-  publicSignals: string[];
-  balanceCommitment: string;
-  nullifierHash: string;
-  newBalanceCommitment: string;
-}
-
-export interface VerificationResult {
-  isValid: boolean;
-  transferAmount: string;
-  balanceCommitment: string;
-  nullifierHash: string;
-  newBalanceCommitment: string;
-  verificationTime: number;
+  proof: any
+  publicSignals: string[]
+  isValid: boolean
+  newBalanceCommitment: string
+  verificationTime: number
 }
 
 export class ZKProofCore {
-  private static instance: ZKProofCore;
-  private wasmPath: string;
-  private zkeyPath: string;
-  private vkeyPath: string;
-  private poseidon: any;
+  private static instance: ZKProofCore
+  private wasmPath = "/circuits/transfer.wasm"
+  private zkeyPath = "/circuits/circuit_final.zkey"
+  private vkeyPath = "/circuits/verification_key.json"
 
-/*************  ✨ Windsurf Command ⭐  *************/
-/**
- * Private constructor for initializing paths to cryptographic circuit files.
- * These paths are used for generating and verifying zero-knowledge proofs.
- * - `wasmPath`: Path to the WebAssembly file for the balance check circuit.
- * - `zkeyPath`: Path to the proving key file for the circuit.
- * - `vkeyPath`: Path to the verification key file for the circuit.
- */
-
-/*******  c34b5aa2-01f9-4951-a5dd-65cae591a52d  *******/
-  private constructor() {
-    this.wasmPath = "/circuits/balance_check.wasm";
-    this.zkeyPath = "/circuits/circuit_final.zkey";
-    this.vkeyPath = "/circuits/verification_key.json";
-  }
-
-  static async getInstance(): Promise<ZKProofCore> {
+  static getInstance(): ZKProofCore {
     if (!ZKProofCore.instance) {
-      const core = new ZKProofCore();
-      await core.init(); // load poseidon here
-      ZKProofCore.instance = core;
+      ZKProofCore.instance = new ZKProofCore()
     }
-    return ZKProofCore.instance;
+    return ZKProofCore.instance
   }
 
-  private async init() {
-    this.poseidon = await circomlib.buildPoseidon();
-  }
-
+  // Generate Poseidon hash
   poseidonHash(inputs: bigint[]): bigint {
-    const hash = this.poseidon(inputs);
-    return this.poseidon.F.toObject(hash);
+    return poseidon(inputs)
   }
 
+  // Generate balance commitment
   generateBalanceCommitment(balance: bigint, nonce: bigint, salt: bigint): bigint {
-    return this.poseidonHash([balance, nonce, salt]);
+    return this.poseidonHash([balance, nonce, salt])
   }
 
+  // Generate nullifier hash to prevent double spending
   generateNullifierHash(balance: bigint, salt: bigint): bigint {
-    return this.poseidonHash([balance, salt]);
+    return this.poseidonHash([balance, salt])
   }
 
-  generateNewBalanceCommitment(newBalance: bigint, nonce: bigint, salt: bigint): bigint {
-    return this.poseidonHash([newBalance, nonce + BigInt(1), salt]);
-  }
-
-  createCircuitInput(input: ZKProofInput) {
-    const balanceCommitment = this.generateBalanceCommitment(input.balance, input.nonce, input.salt);
-    const nullifierHash = this.generateNullifierHash(input.balance, input.salt);
+  // Generate circuit input
+  generateCircuitInput(balance: bigint, transferAmount: bigint, nonce: bigint, salt: bigint): ZKProofInput {
+    const balanceCommitment = this.generateBalanceCommitment(balance, nonce, salt)
+    const nullifierHash = this.generateNullifierHash(balance, salt)
 
     return {
-      balance: input.balance.toString(),
-      nonce: input.nonce.toString(),
-      salt: input.salt.toString(),
-      transferAmount: input.transferAmount.toString(),
+      balance: balance.toString(),
+      nonce: nonce.toString(),
+      salt: salt.toString(),
+      transferAmount: transferAmount.toString(),
       balanceCommitment: balanceCommitment.toString(),
       nullifierHash: nullifierHash.toString(),
-    };
+    }
   }
 
-  async generateProof(input: ZKProofInput): Promise<ZKProofOutput> {
-    if (input.balance < input.transferAmount) {
-      throw new Error("Insufficient balance");
-    }
-
-    const circuitInput = this.createCircuitInput(input);
-
-    console.log("🔐 Generating ZK Proof:", circuitInput);
-
-    const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-      circuitInput,
-      this.wasmPath,
-      this.zkeyPath
-    );
-
-    const isValid = publicSignals[3] === "1";
-    if (!isValid) {
-      throw new Error("Circuit validation failed");
-    }
-
-    return {
-      proof: {
-        pi_a: proof.pi_a.slice(0, 2),
-        pi_b: proof.pi_b.slice(0, 2),
-        pi_c: proof.pi_c.slice(0, 2),
-      },
-      publicSignals: publicSignals.map((s: any) => s.toString()),
-      balanceCommitment: publicSignals[1],
-      nullifierHash: publicSignals[2],
-      newBalanceCommitment: publicSignals[4],
-    };
-  }
-
-  async verifyProof(proof: any, publicSignals: string[]): Promise<VerificationResult> {
-    const startTime = Date.now();
+  // Generate ZK proof for balance check
+  async generateBalanceProof(
+    balance: bigint,
+    transferAmount: bigint,
+    nonce: bigint,
+    salt: bigint,
+  ): Promise<ZKProofOutput> {
+    const startTime = Date.now()
 
     try {
-      const vkeyResponse = await fetch(this.vkeyPath);
+      // Check balance sufficiency before generating proof
+      if (balance < transferAmount) {
+        throw new Error("Insufficient balance for transfer")
+      }
+
+      const input = this.generateCircuitInput(balance, transferAmount, nonce, salt)
+
+      console.log("🔐 Generating ZK proof with input:", {
+        transferAmount: input.transferAmount,
+        balanceCommitment: input.balanceCommitment.substring(0, 20) + "...",
+        nullifierHash: input.nullifierHash.substring(0, 20) + "...",
+      })
+
+      // Generate proof using snarkjs
+      const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, this.wasmPath, this.zkeyPath)
+
+      const verificationTime = Date.now() - startTime
+
+      // Parse public signals
+      // [0] = transferAmount, [1] = balanceCommitment, [2] = nullifierHash,
+      // [3] = isValid, [4] = newBalanceCommitment
+      const isValid = publicSignals[3] === "1"
+      const newBalanceCommitment = publicSignals[4]
+
+      console.log("✅ ZK proof generated successfully in", verificationTime, "ms")
+
+      return {
+        proof: {
+          pi_a: proof.pi_a.slice(0, 2),
+          pi_b: proof.pi_b.slice(0, 2),
+          pi_c: proof.pi_c.slice(0, 2),
+        },
+        publicSignals: publicSignals.map((s: any) => s.toString()),
+        isValid,
+        newBalanceCommitment,
+        verificationTime,
+      }
+    } catch (error) {
+      console.error("❌ Error generating ZK proof:", error)
+      throw new Error(`Failed to generate ZK balance proof: ${error}`)
+    }
+  }
+
+  // Verify ZK proof
+  async verifyBalanceProof(
+    proof: any,
+    publicSignals: string[],
+  ): Promise<{
+    isValid: boolean
+    transferAmount: string
+    balanceCommitment: string
+    nullifierHash: string
+    newBalanceCommitment: string
+    verificationTime: number
+  }> {
+    const startTime = Date.now()
+
+    try {
+      // Load verification key
+      const vkeyResponse = await fetch(this.vkeyPath)
       if (!vkeyResponse.ok) {
-        throw new Error("Failed to load verification key");
+        throw new Error("Failed to load verification key")
       }
-      const vKey = await vkeyResponse.json();
+      const vKey = await vkeyResponse.json()
 
-      const isValidProof = await snarkjs.groth16.verify(vKey, publicSignals, proof);
+      // Verify proof
+      const isProofValid = await snarkjs.groth16.verify(vKey, publicSignals, proof)
+      const verificationTime = Date.now() - startTime
 
-      if (!isValidProof || publicSignals[3] !== "1") {
-        throw new Error("Invalid ZK Proof");
+      if (!isProofValid) {
+        console.log("❌ ZK proof verification failed")
+        return {
+          isValid: false,
+          transferAmount: "0",
+          balanceCommitment: "",
+          nullifierHash: "",
+          newBalanceCommitment: "",
+          verificationTime,
+        }
       }
+
+      // Parse public signals
+      const transferAmount = publicSignals[0]
+      const balanceCommitment = publicSignals[1]
+      const nullifierHash = publicSignals[2]
+      const circuitValid = publicSignals[3] === "1"
+      const newBalanceCommitment = publicSignals[4]
+
+      if (!circuitValid) {
+        console.log("❌ Circuit validation failed - insufficient balance")
+        return {
+          isValid: false,
+          transferAmount,
+          balanceCommitment,
+          nullifierHash,
+          newBalanceCommitment,
+          verificationTime,
+        }
+      }
+
+      console.log("✅ ZK proof verified successfully in", verificationTime, "ms")
 
       return {
         isValid: true,
-        transferAmount: publicSignals[0],
-        balanceCommitment: publicSignals[1],
-        nullifierHash: publicSignals[2],
-        newBalanceCommitment: publicSignals[4],
-        verificationTime: Date.now() - startTime,
-      };
-    } catch (err) {
-      console.error("❌ Verification error:", err);
+        transferAmount,
+        balanceCommitment,
+        nullifierHash,
+        newBalanceCommitment,
+        verificationTime,
+      }
+    } catch (error) {
+      console.error("❌ Error verifying ZK proof:", error)
       return {
         isValid: false,
         transferAmount: "0",
@@ -163,22 +190,48 @@ export class ZKProofCore {
         nullifierHash: "",
         newBalanceCommitment: "",
         verificationTime: Date.now() - startTime,
-      };
+      }
     }
   }
 
-  generateRandomValues() {
-    return {
-      nonce: BigInt("0x" + crypto.randomBytes(16).toString("hex")),
-      salt: BigInt("0x" + crypto.randomBytes(16).toString("hex")),
-    };
-  }
+  // Create transfer proof for frontend
+  async createTransferProof(
+    balance: bigint,
+    transferAmount: bigint,
+  ): Promise<{
+    proof: any
+    publicSignals: string[]
+    balanceCommitment: string
+    nullifierHash: string
+    newBalanceCommitment: string
+    metadata: {
+      nonce: string
+      salt: string
+      verificationTime: number
+    }
+  }> {
+    try {
+      // Generate random nonce and salt for privacy
+      const nonce = BigInt(Math.floor(Math.random() * 1000000))
+      const salt = BigInt(Math.floor(Math.random() * 1000000))
 
-  ethToWei(eth: string): bigint {
-    return BigInt(Math.floor(parseFloat(eth) * 1e18));
-  }
+      const result = await this.generateBalanceProof(balance, transferAmount, nonce, salt)
 
-  weiToEth(wei: bigint): string {
-    return (Number(wei) / 1e18).toFixed(8);
+      return {
+        proof: result.proof,
+        publicSignals: result.publicSignals,
+        balanceCommitment: result.publicSignals[1],
+        nullifierHash: result.publicSignals[2],
+        newBalanceCommitment: result.newBalanceCommitment,
+        metadata: {
+          nonce: nonce.toString(),
+          salt: salt.toString(),
+          verificationTime: result.verificationTime,
+        },
+      }
+    } catch (error) {
+      console.error("❌ Error creating transfer proof:", error)
+      throw error
+    }
   }
 }

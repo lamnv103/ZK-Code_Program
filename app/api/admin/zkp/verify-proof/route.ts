@@ -1,101 +1,110 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 import { ZKProofCore } from "@/lib/zkp-core"
 
 const prisma = new PrismaClient()
 
-/*************  ✨ Windsurf Command 🌟  *************/
-/**
- * Handle POST request to verify a zero-knowledge proof by admin.
- * 
- * @param request - The incoming HTTP request containing proof details.
- * @returns A JSON response indicating success or failure of the verification process.
- */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    // Extract proof data from request
-    const { proofId, proof, publicSignals } = await request.json()
+    const { proofId } = await request.json()
 
-    console.log(`🔍 Admin verifying ZK Proof: ${proofId}`)
+    if (!proofId) {
+      return NextResponse.json({ error: "Proof ID is required" }, { status: 400 })
+    }
 
-    // Fetch the proof record from database
-    // Find the proof record
-    const zkProofRecord = await prisma.zkProof.findUnique({
+    // Get ZK proof from database
+    const zkProof = await prisma.zkProof.findUnique({
       where: { id: proofId },
-      include: { transaction: true },
+      include: {
+        transaction: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                walletAddress: true,
+              },
+            },
+          },
+        },
+      },
     })
 
-    if (!zkProofRecord) {
-      // Respond with 404 if proof record not found
-      return NextResponse.json({ error: "Proof not found" }, { status: 404 })
+    if (!zkProof) {
+      return NextResponse.json({ error: "ZK proof not found" }, { status: 404 })
     }
 
-    // Verify the proof using the ZKProofCore system
-    // Verify the ZK proof using our core system
-    const zkProofCore = await ZKProofCore.getInstance()
-    const verificationResult = await zkProofCore.verifyProof(
-      proof || zkProofRecord.proofData,
-      publicSignals || zkProofRecord.publicSignals,
+    console.log("🔍 Admin verifying ZK proof:", proofId)
+
+    // Parse publicSignals to ensure it's string[]
+    let publicSignals: string[] = []
+    if (typeof zkProof.publicSignals === "string") {
+      try {
+        const parsed = JSON.parse(zkProof.publicSignals)
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+          publicSignals = parsed
+        } else {
+          throw new Error("Invalid publicSignals format")
+        }
+      } catch (e) {
+        return NextResponse.json({ error: "Invalid publicSignals JSON format" }, { status: 400 })
+      }
+    } else {
+      return NextResponse.json({ error: "publicSignals must be stored as a JSON string" }, { status: 400 })
+    }
+
+    const zkProofCore = ZKProofCore.getInstance()
+    const verificationResult = await zkProofCore.verifyBalanceProof(zkProof.proofData as string, publicSignals)
+
+    // Update verification status
+    await prisma.zkProof.update({
+      where: { id: proofId },
+      data: {
+        verificationTime: verificationResult.verificationTime,
+        updatedAt: new Date(),
+      },
+    })
+
+    // Update transaction status based on verification
+    const newStatus = verificationResult.isValid ? "verified" : "failed"
+    await prisma.transaction.update({
+      where: { id: zkProof.transactionId },
+      data: { status: newStatus },
+    })
+
+    console.log(
+      verificationResult.isValid ? "✅" : "❌",
+      "Admin ZK proof verification:",
+      verificationResult.isValid ? "VALID" : "INVALID",
     )
 
-    if (verificationResult.isValid) {
-      // Update transaction status to 'verified'
-      // Update transaction status
-      await prisma.transaction.update({
-        where: { id: zkProofRecord.transactionId },
-        data: {
-          status: "verified",
-          updatedAt: new Date(),
-        },
-      })
-
-      console.log(`✅ ZK Proof ${proofId} verified successfully`)
-
-      // Respond with success message
-      return NextResponse.json({
-        success: true,
+    return NextResponse.json({
+      success: true,
+      verification: {
         proofId,
-        status: "verified",
-        verificationTime: verificationResult.verificationTime + "ms",
-        verificationDetails: {
-          transferAmount: verificationResult.transferAmount,
-          balanceCommitment: verificationResult.balanceCommitment,
-          nullifierHash: verificationResult.nullifierHash,
-          newBalanceCommitment: verificationResult.newBalanceCommitment,
-          circuit: "BalanceCheck",
-          proofSystem: "Groth16",
-          verified: true,
-          timestamp: new Date().toISOString(),
-        },
-        message: "ZK Proof verified successfully by admin",
-      })
-    } else {
-      console.log(`❌ ZK Proof ${proofId} verification failed`)
-
-      // Respond with failure message
-      return NextResponse.json(
-        {
-          success: false,
-          proofId,
-          status: "failed",
-          verificationTime: verificationResult.verificationTime + "ms",
-          error: "Invalid proof or insufficient balance",
-          message: "ZK Proof verification failed",
-        },
-        { status: 400 },
-      )
-    }
+        isValid: verificationResult.isValid,
+        verificationTime: verificationResult.verificationTime,
+        transferAmount: verificationResult.transferAmount,
+        balanceCommitment: verificationResult.balanceCommitment,
+        nullifierHash: verificationResult.nullifierHash,
+        newBalanceCommitment: verificationResult.newBalanceCommitment,
+      },
+      transaction: {
+        id: zkProof.transaction.id,
+        amount: zkProof.transaction.amount,
+        status: newStatus,
+        user: zkProof.transaction.user,
+      },
+      message: verificationResult.isValid ? "ZK proof verified successfully" : "ZK proof verification failed",
+    })
   } catch (error) {
-    // Handle errors during verification process
-    console.error("❌ Admin ZKP verification error:", error)
+    console.error("❌ Admin ZK proof verification error:", error)
     return NextResponse.json(
       {
-        success: false,
         error: "Verification failed",
-        message: error instanceof Error ? error.message : "Error verifying proof",
+        message: error instanceof Error ? error.message : "Unknown error occurred",
       },
       { status: 500 },
     )
   }
 }
-/*******  b56f76f9-d353-4efc-8655-2564ae6051b5  *******/

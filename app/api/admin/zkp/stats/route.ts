@@ -5,37 +5,60 @@ const prisma = new PrismaClient()
 
 export async function GET() {
   try {
-    // Get ZKP statistics
-    const [totalProofs, recentProofs, avgVerificationTime] = await Promise.all([
-      prisma.zkProof.count(),
-      prisma.zkProof.count({
-        where: {
-          createdAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+    // Get ZK proof statistics
+    const [totalProofs, verifiedProofs, failedProofs, todayProofs, weekProofs, avgVerificationTime] = await Promise.all(
+      [
+        prisma.zkProof.count(),
+        prisma.zkProof.count({
+          where: {
+            transaction: {
+              status: "verified",
+            },
           },
-        },
-      }),
-      // Simulate average verification time calculation
-      Promise.resolve(2.3),
-    ])
+        }),
+        prisma.zkProof.count({
+          where: {
+            transaction: {
+              status: "failed",
+            },
+          },
+        }),
+        prisma.zkProof.count({
+          where: {
+            createdAt: {
+              gte: new Date(new Date().setHours(0, 0, 0, 0)),
+            },
+          },
+        }),
+        prisma.zkProof.count({
+          where: {
+            createdAt: {
+              gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+            },
+          },
+        }),
+        prisma.zkProof.aggregate({
+          _avg: {
+            verificationTime: true,
+          },
+        }),
+      ],
+    )
 
-    const weeklyProofs = await prisma.zkProof.count({
-      where: {
-        createdAt: {
-          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
-        },
-      },
-    })
+    const successRate = totalProofs > 0 ? ((verifiedProofs / totalProofs) * 100).toFixed(1) : "0"
 
     const stats = {
       totalProofs,
-      successRate: 99.7, // Calculate from actual data
-      avgVerificationTime,
-      activeVerifiers: 5,
+      successRate: Number.parseFloat(successRate),
+      avgVerificationTime: (avgVerificationTime._avg.verificationTime || 2300) / 1000, // Convert to seconds
+      activeVerifiers: 5, // Simulated
       circuitSize: "2^20",
       proofSystem: "Groth16",
-      dailyProofs: recentProofs,
-      weeklyProofs,
+      dailyProofs: todayProofs,
+      weeklyProofs: weekProofs,
+      verifiedProofs,
+      failedProofs,
+      pendingProofs: totalProofs - verifiedProofs - failedProofs,
     }
 
     return NextResponse.json({
@@ -43,7 +66,7 @@ export async function GET() {
       stats,
     })
   } catch (error) {
-    console.error("ZKP stats error:", error)
+    console.error("Admin ZKP stats error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

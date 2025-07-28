@@ -44,11 +44,7 @@ model Transaction {
   toAddress   String
   amount      Decimal  @db.Decimal(20, 8) // Keep high precision for crypto
   status      String   @default("pending") // pending, verified, failed
-<<<<<<< HEAD
   zkProofHash String?  // Made optional and unique for quick lookup
-=======
-  zkProofHash String? @unique // để đảm bảo mỗi ZKP có hash duy nhất
->>>>>>> 063705e (Initial commit)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt // Added updatedAt field
   userId      String
@@ -66,11 +62,18 @@ model ZkProof {
   transactionId String   @unique
   proofData     Json     @db.Json // Full ZKP data (json encoded)
   publicSignals Json     @db.Json // Signals needed for verification
+  status        String   @default("pending") // pending, verified, failed
+  zkProofHash   String?  @unique // đảm bảo mỗi ZKP có hash duy nhất
   createdAt     DateTime @default(now())
-  
+  verificationTime Int?     // 👈 Phải đúng kiểu Int hoặc Float
+  updatedAt        DateTime @updatedAt // thêm dòng này nếu muốn tự cập nhật mỗi khi record thay đổi
+  balanceCommitment String?  // ✅ thêm nếu bạn dùng trong code
+  nullifierHash     String?  // ✅ thêm nếu bạn dùng trong code
+
   // Relations
   transaction Transaction @relation(fields: [transactionId], references: [id])
 }
+
 
 // New model for deposit functionality
 model Deposit {

@@ -85,19 +85,21 @@ export function PinInput({ length = 6, onComplete, onPinChange, disabled = false
   return (
     <div className={cn("flex gap-2 justify-center", className)}>
       {pin.map((digit, index) => (
-        <Input
-          key={index}
-          ref={(el) => (inputRefs.current[index] = el)}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={digit}
-          onChange={(e) => handleChange(index, e.target.value)}
-          onKeyDown={(e) => handleKeyDown(index, e)}
-          onPaste={handlePaste}
-          disabled={disabled || isCompleting}
-          className={cn("w-12 h-12 text-center text-lg font-semibold", isCompleting && "opacity-50")}
-        />
+      <Input
+        key={index}
+        ref={(el) => {
+          inputRefs.current[index] = el
+        }}
+        type="text"
+        inputMode="numeric"
+        maxLength={1}
+        value={digit}
+        onChange={(e) => handleChange(index, e.target.value)}
+        onKeyDown={(e) => handleKeyDown(index, e)}
+        onPaste={handlePaste}
+        disabled={disabled || isCompleting}
+        className={cn("w-12 h-12 text-center text-lg font-semibold", isCompleting && "opacity-50")}
+      />
       ))}
     </div>
   )

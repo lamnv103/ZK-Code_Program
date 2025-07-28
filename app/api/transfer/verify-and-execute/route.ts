@@ -3,7 +3,6 @@ import { PrismaClient } from "@prisma/client"
 import jwt from "jsonwebtoken"
 import { ZKProofCore } from "@/lib/zkp-core"
 import { BalanceManager } from "@/lib/balance-manager"
-import crypto from "crypto"
 
 const prisma = new PrismaClient()
 
@@ -21,81 +20,60 @@ export async function POST(request: NextRequest) {
     const { zkProof, transferDetails, proofMetadata, recipientId, transferPin, description } = await request.json()
 
     // Validate input
-    if (!zkProof || !transferDetails || !proofMetadata || !recipientId || !transferPin) {
+    if (!zkProof || !transferDetails || !recipientId || !transferPin) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    console.log(`🔍 Verifying ZK Proof for transfer: ${transferDetails.amount} ETH`)
+    console.log("🔍 Starting ZK proof verification and transfer execution...")
 
-    // 2. Verify transfer PIN
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-    })
+    // 2. Get sender and recipient
+    const [sender, recipient] = await Promise.all([
+      prisma.user.findUnique({ where: { id: decoded.userId } }),
+      prisma.user.findUnique({ where: { id: recipientId } }),
+    ])
 
-    if (!user) {
+    if (!sender || !recipient) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const storedPin = user.transferPin || "123456"
+    // 3. Verify transfer PIN
+    const storedPin = sender.transferPin || "123456" // Demo PIN
     if (transferPin !== storedPin) {
-      return NextResponse.json(
-        {
-          error: "Invalid PIN",
-          message: "Transfer PIN is incorrect",
-        },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "Invalid PIN", message: "Transfer PIN is incorrect" }, { status: 400 })
     }
 
-    // 3. Get recipient information
-    const recipient = await prisma.user.findUnique({
-      where: { id: recipientId },
-      include: { balance: true },
-    })
-
-    if (!recipient) {
-      return NextResponse.json({ error: "Recipient not found" }, { status: 404 })
-    }
-
-    // 4. Verify ZK Proof
-    const zkProofCore = await ZKProofCore.getInstance()
-    const verificationResult = await zkProofCore.verifyProof(zkProof.proof, zkProof.publicSignals)
+    // 4. Verify ZK proof
+    const zkProofCore = ZKProofCore.getInstance()
+    const verificationResult = await zkProofCore.verifyBalanceProof(zkProof.proof, zkProof.publicSignals)
 
     if (!verificationResult.isValid) {
       return NextResponse.json(
         {
-          error: "Invalid ZK Proof",
+          error: "Invalid ZK proof",
           message: "Zero-knowledge proof verification failed",
-          verificationTime: verificationResult.verificationTime,
         },
         { status: 400 },
       )
     }
 
-    console.log(`✅ ZK Proof verified in ${verificationResult.verificationTime}ms`)
+    console.log("✅ ZK proof verified successfully in", verificationResult.verificationTime, "ms")
 
-    // 5. Validate proof consistency
-    const expectedTransferAmount = BigInt(transferDetails.amountWei)
-    const proofTransferAmount = BigInt(verificationResult.transferAmount)
+    // 5. Execute balance transfer
+    const balanceManager = BalanceManager.getInstance()
+    const transferResult = await balanceManager.transferBalance(decoded.userId, recipientId, transferDetails.amount)
 
-    if (proofTransferAmount !== expectedTransferAmount) {
-      return NextResponse.json(
-        {
-          error: "Amount mismatch",
-          message: "Proof transfer amount doesn't match request",
-        },
-        { status: 400 },
-      )
+    if (!transferResult.success) {
+      return NextResponse.json({ error: "Transfer failed", message: transferResult.message }, { status: 400 })
     }
 
-    // 6. Execute transfer in database transaction
-    const result = await prisma.$transaction(async (tx) => {
+    // 6. Create transaction records
+    const transactionResult = await prisma.$transaction(async (tx) => {
       // Create transfer record
       const transfer = await tx.transfer.create({
         data: {
           fromUserId: decoded.userId,
           toUserId: recipientId,
-          fromWalletAddress: user.walletAddress,
+          fromWalletAddress: sender.walletAddress,
           toWalletAddress: recipient.walletAddress,
           amount: Number.parseFloat(transferDetails.amount),
           status: "completed",
@@ -109,86 +87,44 @@ export async function POST(request: NextRequest) {
           transactionId: transfer.id,
           proofData: zkProof.proof,
           publicSignals: zkProof.publicSignals,
+          balanceCommitment: zkProof.balanceCommitment,
+          nullifierHash: zkProof.nullifierHash,
+          verificationTime: verificationResult.verificationTime,
         },
       })
 
-      // Create transaction record for compatibility
-      const transaction = await tx.transaction.create({
-        data: {
-          userId: decoded.userId,
-          fromAddress: user.walletAddress,
-          toAddress: recipient.walletAddress,
-          amount: Number.parseFloat(transferDetails.amount),
-          status: "verified",
-          zkProofHash: crypto.randomBytes(16).toString("hex"),
-        },
-      })
-
-      return { transfer, zkProofRecord, transaction }
+      return { transfer, zkProofRecord }
     })
 
-    // 7. Update sender's balance
-    const balanceManager = BalanceManager.getInstance()
-    const userKey = decoded.userId + (process.env.ENCRYPTION_KEY || "demo-key")
-
-    const newBalance = BigInt(transferDetails.amountWei) // This should be calculated: currentBalance - transferAmount
-    const newNonce = BigInt(proofMetadata.nonce) + BigInt(1)
-    const salt = BigInt(proofMetadata.salt)
-
-    await balanceManager.updateUserBalance(
-      decoded.userId,
-      userKey,
-      BigInt(transferDetails.newBalance.replace(/\./g, "").padEnd(21, "0")), // Convert back to wei
-      newNonce,
-      salt,
-      zkProof.newBalanceCommitment,
-    )
-
-    // 8. Update recipient's balance (simplified for demo)
-    const recipientKey = recipientId + (process.env.ENCRYPTION_KEY || "demo-key")
-    const recipientBalanceInfo = await balanceManager.getUserBalance(recipientId, recipientKey)
-    const recipientNewBalance = recipientBalanceInfo.balance + BigInt(transferDetails.amountWei)
-
-    await balanceManager.updateUserBalance(
-      recipientId,
-      recipientKey,
-      recipientNewBalance,
-      recipientBalanceInfo.nonce + BigInt(1),
-      recipientBalanceInfo.salt,
-      balanceManager.createCommitment(
-        recipientNewBalance,
-        recipientBalanceInfo.nonce + BigInt(1),
-        recipientBalanceInfo.salt,
-      ),
-    )
-
-    console.log(`🎉 Transfer completed successfully!`)
+    console.log("🎉 Transfer completed successfully:", {
+      transferId: transactionResult.transfer.id,
+      amount: transferDetails.amount,
+      from: sender.email,
+      to: recipient.email,
+    })
 
     return NextResponse.json({
       success: true,
       transfer: {
-        id: result.transfer.id,
+        id: transactionResult.transfer.id,
         amount: transferDetails.amount,
         recipient: {
-          name: recipient.name || recipient.email.split("@")[0],
           email: recipient.email,
+          name: recipient.name || recipient.email.split("@")[0],
           walletAddress: recipient.walletAddress,
         },
-        status: result.transfer.status,
-        createdAt: result.transfer.createdAt,
-      },
-      zkProofVerification: {
-        verified: true,
-        verificationTime: verificationResult.verificationTime,
-        proofId: result.zkProofRecord.id,
-        balanceCommitment: verificationResult.balanceCommitment,
-        nullifierHash: verificationResult.nullifierHash,
-        newBalanceCommitment: verificationResult.newBalanceCommitment,
+        status: "completed",
+        createdAt: transactionResult.transfer.createdAt,
       },
       balanceUpdate: {
         previousBalance: transferDetails.currentBalance,
-        newBalance: transferDetails.newBalance,
-        transferAmount: transferDetails.amount,
+        newBalance: transferResult.newFromBalance,
+      },
+      zkProofVerification: {
+        proofId: transactionResult.zkProofRecord.id,
+        verificationTime: verificationResult.verificationTime,
+        balanceCommitment: zkProof.balanceCommitment,
+        nullifierHash: zkProof.nullifierHash,
       },
       message: "Transfer completed successfully with zero-knowledge proof verification",
     })
@@ -197,7 +133,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Transfer failed",
-        message: error instanceof Error ? error.message : "Failed to execute transfer",
+        message: error instanceof Error ? error.message : "Unknown error occurred",
       },
       { status: 500 },
     )

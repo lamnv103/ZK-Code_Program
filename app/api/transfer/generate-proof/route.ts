@@ -21,83 +21,87 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const transferAmountWei = BigInt(Math.floor(Number.parseFloat(transferAmount) * 1e18))
+    const transferAmountBigInt = BigInt(Math.floor(Number.parseFloat(transferAmount) * 1000000000000000000)) // Convert to wei
 
-    if (transferAmountWei <= 0) {
-      return NextResponse.json({ error: "Invalid transfer amount" }, { status: 400 })
+    console.log("🚀 Starting ZK proof generation for transfer:", {
+      userId: decoded.userId,
+      transferAmount,
+      recipientAddress,
+    })
+
+    // 2. Get user balance
+    const balanceManager = BalanceManager.getInstance()
+    const balanceInfo = await balanceManager.getUserBalance(decoded.userId)
+
+    if (!balanceInfo) {
+      return NextResponse.json({ error: "Balance not found", message: "User balance not initialized" }, { status: 404 })
     }
 
-    console.log(`🚀 Generating ZK Proof for transfer: ${transferAmount} ETH`)
+    // 3. Check balance sufficiency
+    const balanceCheck = await balanceManager.checkSufficientBalance(decoded.userId, transferAmount)
 
-    // 2. Get user's balance information
-    const balanceManager = BalanceManager.getInstance()
-    const userKey = decoded.userId + (process.env.ENCRYPTION_KEY || "demo-key")
-    const balanceInfo = await balanceManager.getUserBalance(decoded.userId, userKey)
-
-    console.log(`💰 User balance: ${Number(balanceInfo.balance) / 1e18} ETH`)
-
-    // 3. Check if user has sufficient balance
-    if (balanceInfo.balance < transferAmountWei) {
+    if (!balanceCheck.hasSufficientBalance) {
       return NextResponse.json(
         {
           error: "Insufficient balance",
-          message: "Your balance is not sufficient for this transfer",
-          currentBalance: (Number(balanceInfo.balance) / 1e18).toFixed(8),
-          requestedAmount: transferAmount,
+          message: balanceCheck.message,
+          currentBalance: balanceCheck.currentBalance,
         },
         { status: 400 },
       )
     }
 
-    // 4. Generate ZK Proof
-    const zkProofCore = await ZKProofCore.getInstance()
-    const randomValues = zkProofCore.generateRandomValues()
+    // 4. Generate ZK proof
+    const zkProofCore = ZKProofCore.getInstance()
+    const currentBalanceBigInt = BigInt(
+      Math.floor(Number.parseFloat(balanceInfo.decryptedBalance) * 1000000000000000000),
+    )
 
-    const proofInput = {
-      balance: balanceInfo.balance,
-      transferAmount: transferAmountWei,
-      nonce: randomValues.nonce,
-      salt: randomValues.salt,
+    const zkProofResult = await zkProofCore.createTransferProof(currentBalanceBigInt, transferAmountBigInt)
+
+    // 5. Calculate transfer details
+    const newBalance = (Number.parseFloat(balanceInfo.decryptedBalance) - Number.parseFloat(transferAmount)).toString()
+
+    const transferDetails = {
+      amount: transferAmount,
+      amountWei: transferAmountBigInt.toString(),
+      recipientAddress,
+      currentBalance: balanceInfo.decryptedBalance,
+      newBalance,
     }
 
-    const zkProof = await zkProofCore.generateProof(proofInput)
+    const proofMetadata = {
+      userId: decoded.userId,
+      timestamp: new Date().toISOString(),
+      balanceCommitment: zkProofResult.balanceCommitment,
+      nullifierHash: zkProofResult.nullifierHash,
+      verificationTime: zkProofResult.metadata.verificationTime,
+    }
 
-    // 5. Calculate new balance for commitment
-    const newBalance = balanceInfo.balance - transferAmountWei
-    const newNonce = randomValues.nonce + BigInt(1)
-
-    console.log(`✅ ZK Proof generated successfully`)
-    console.log(`📊 New balance will be: ${Number(newBalance) / 1e18} ETH`)
+    console.log("✅ ZK proof generated successfully:", {
+      verificationTime: zkProofResult.metadata.verificationTime,
+      isValid: zkProofResult.publicSignals[3] === "1",
+    })
 
     return NextResponse.json({
       success: true,
       zkProof: {
-        proof: zkProof.proof,
-        publicSignals: zkProof.publicSignals,
-        balanceCommitment: zkProof.balanceCommitment,
-        nullifierHash: zkProof.nullifierHash,
-        newBalanceCommitment: zkProof.newBalanceCommitment,
+        proof: zkProofResult.proof,
+        publicSignals: zkProofResult.publicSignals,
+        balanceCommitment: zkProofResult.balanceCommitment,
+        nullifierHash: zkProofResult.nullifierHash,
+        newBalanceCommitment: zkProofResult.newBalanceCommitment,
       },
-      transferDetails: {
-        amount: transferAmount,
-        amountWei: transferAmountWei.toString(),
-        recipientAddress,
-        currentBalance: (Number(balanceInfo.balance) / 1e18).toFixed(8),
-        newBalance: (Number(newBalance) / 1e18).toFixed(8),
-      },
-      proofMetadata: {
-        nonce: randomValues.nonce.toString(),
-        salt: randomValues.salt.toString(),
-        generatedAt: new Date().toISOString(),
-      },
-      message: "ZK Proof generated successfully - balance sufficiency proven without revealing actual balance",
+      transferDetails,
+      proofMetadata,
+      message: "Zero-knowledge proof generated successfully",
     })
   } catch (error) {
-    console.error("❌ Error generating ZK proof:", error)
+    console.error("❌ ZK proof generation error:", error)
     return NextResponse.json(
       {
         error: "Proof generation failed",
-        message: error instanceof Error ? error.message : "Failed to generate zero-knowledge proof",
+        message: error instanceof Error ? error.message : "Unknown error occurred",
       },
       { status: 500 },
     )

@@ -1,19 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-<<<<<<< HEAD
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle, XCircle, Clock } from "lucide-react"
-
-interface Transaction {
-  id: string
-  toAddress: string
-  amount: string
-  status: string
-  createdAt: string
-  zkProofHash: string
-=======
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -61,16 +48,12 @@ interface TransactionStats {
   totalReceived: string
   totalDeposits: string
   successRate: number
->>>>>>> 063705e (Initial commit)
 }
 
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "verified":
-<<<<<<< HEAD
-=======
     case "completed":
->>>>>>> 063705e (Initial commit)
       return <CheckCircle className="w-4 h-4 text-green-600" />
     case "pending":
       return <Clock className="w-4 h-4 text-yellow-600" />
@@ -84,27 +67,17 @@ const getStatusIcon = (status: string) => {
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "verified":
-<<<<<<< HEAD
-      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">✅ Đã xác minh</Badge>
-    case "pending":
-      return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">⏳ Đang xử lý</Badge>
-    case "failed":
-      return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">❌ Không hợp lệ</Badge>
-=======
     case "completed":
       return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">✅ Thành công</Badge>
     case "pending":
       return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">⏳ Đang xử lý</Badge>
     case "failed":
       return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">❌ Thất bại</Badge>
->>>>>>> 063705e (Initial commit)
     default:
       return null
   }
 }
 
-<<<<<<< HEAD
-=======
 const getTransactionIcon = (type: string) => {
   switch (type) {
     case "transfer":
@@ -131,46 +104,19 @@ const getTransactionTypeLabel = (type: string) => {
   }
 }
 
->>>>>>> 063705e (Initial commit)
 function formatDate(dateString: string): string {
   const date = new Date(dateString)
   return date.toLocaleDateString("vi-VN", {
     year: "numeric",
-<<<<<<< HEAD
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-=======
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
->>>>>>> 063705e (Initial commit)
   })
 }
 
 export default function HistoryPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
-<<<<<<< HEAD
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetchTransactions()
-  }, [])
-
-  const fetchTransactions = async () => {
-    try {
-      const token = localStorage.getItem("token")
-      if (!token) {
-        setError("Vui lòng đăng nhập để xem lịch sử giao dịch")
-        setLoading(false)
-        return
-      }
-
-=======
   const [stats, setStats] = useState<TransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -188,7 +134,6 @@ export default function HistoryPage() {
 
   const fetchTransactions = async () => {
     try {
->>>>>>> 063705e (Initial commit)
       const response = await fetch("/api/transactions/history", {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -201,10 +146,7 @@ export default function HistoryPage() {
 
       const data = await response.json()
       setTransactions(data.transactions || [])
-<<<<<<< HEAD
-=======
       setStats(data.stats || null)
->>>>>>> 063705e (Initial commit)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra")
     } finally {
@@ -212,12 +154,6 @@ export default function HistoryPage() {
     }
   }
 
-<<<<<<< HEAD
-  if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-=======
   const exportTransactions = () => {
     const csvContent = [
       ["Thời gian", "Loại", "Số tiền", "Trạng thái", "Mô tả"].join(","),
@@ -292,7 +228,6 @@ export default function HistoryPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
->>>>>>> 063705e (Initial commit)
           <div className="text-center">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-muted-foreground">Đang tải lịch sử giao dịch...</p>
@@ -305,11 +240,7 @@ export default function HistoryPage() {
   if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
-<<<<<<< HEAD
-        <div className="max-w-4xl mx-auto">
-=======
         <div className="max-w-6xl mx-auto">
->>>>>>> 063705e (Initial commit)
           <Card className="bg-red-50 border-red-200">
             <CardContent className="p-6">
               <p className="text-red-800">{error}</p>
@@ -322,54 +253,6 @@ export default function HistoryPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-<<<<<<< HEAD
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Lịch sử giao dịch</h1>
-          <p className="text-muted-foreground">Danh sách các giao dịch đã thực hiện (không hiển thị số dư)</p>
-        </div>
-
-        {transactions.length === 0 ? (
-          <Card>
-            <CardContent className="p-6 text-center">
-              <p className="text-muted-foreground">Chưa có giao dịch nào</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {transactions.map((tx) => (
-              <Card key={tx.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(tx.status)}
-                        <span className="font-medium">Giao dịch #{tx.id.substring(0, 8)}</span>
-                      </div>
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <div>
-                          <span className="font-medium">Người nhận:</span>{" "}
-                          <code className="bg-muted px-1 py-0.5 rounded">{tx.toAddress}</code>
-                        </div>
-                        <div>
-                          <span className="font-medium">Thời gian:</span> {formatDate(tx.createdAt)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col md:items-end gap-2">
-                      <div className="text-2xl font-bold">{tx.amount} ETH</div>
-                      {getStatusBadge(tx.status)}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        <Card className="mt-8 bg-blue-50 border-blue-200">
-=======
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2">Lịch sử giao dịch</h1>
@@ -602,27 +485,16 @@ export default function HistoryPage() {
 
         {/* Privacy Notice */}
         <Card className="bg-blue-50 border-blue-200">
->>>>>>> 063705e (Initial commit)
           <CardHeader>
             <CardTitle className="text-blue-800">Lưu ý về quyền riêng tư</CardTitle>
           </CardHeader>
           <CardContent>
-<<<<<<< HEAD
-            <p className="text-blue-700 text-sm">
-              ✔️ Không hiển thị số dư hay chi tiết ví của người gửi (bạn)
-              <br />
-              ✔️ Chỉ hiển thị thông tin giao dịch công khai: địa chỉ người nhận, số tiền, thời gian
-              <br />
-              ✔️ Trạng thái xác minh dựa trên Zero-Knowledge Proof
-            </p>
-=======
             <div className="space-y-2 text-blue-700 text-sm">
               <p>✔️ Số dư tài khoản của bạn luôn được giữ bí mật</p>
               <p>✔️ Chỉ hiển thị thông tin giao dịch công khai: số tiền, người nhận, thời gian</p>
               <p>✔️ Mọi giao dịch được xác minh bằng Zero-Knowledge Proof</p>
               <p>✔️ Không ai có thể biết số dư thực tế của bạn từ lịch sử này</p>
             </div>
->>>>>>> 063705e (Initial commit)
           </CardContent>
         </Card>
       </div>
