@@ -225,10 +225,6 @@ export default function TransferPage() {
                   <span>Số tiền:</span>
                   <span className="font-semibold text-lg">{transferResult?.transfer.amount} ETH</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Số dư còn lại:</span>
-                  <span className="font-semibold">{transferResult?.newBalance} ETH</span>
-                </div>
               </div>
               <Button onClick={resetTransfer} className="w-full bg-transparent" variant="outline">
                 Thực hiện giao dịch khác
@@ -372,7 +368,7 @@ export default function TransferPage() {
                     <CheckCircle className="w-4 h-4" />
                     <span className="font-medium">Số dư đủ để thực hiện giao dịch</span>
                   </div>
-                  <p className="text-sm text-green-700 mt-1">Số dư hiện tại: {balanceCheck.currentBalance} ETH</p>
+                  {/* <p className="text-sm text-green-700 mt-1">Số dư hiện tại: {balanceCheck.currentBalance} ETH</p> */}
                 </div>
               )}
 

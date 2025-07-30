@@ -30,7 +30,7 @@ const navigation = [
 const adminNavigation = [
   { name: "Admin Dashboard", href: "/admin", icon: Settings },
   { name: "Quản lý ZKP", href: "/admin/zkp", icon: Shield },
-  { name: "Quản lý giao dịch", href: "/admin/transactions", icon: History },
+  // { name: "Quản lý giao dịch", href: "/admin/transactions", icon: History },
   { name: "Quản lý người dùng", href: "/admin/users", icon: User },
 ]
 

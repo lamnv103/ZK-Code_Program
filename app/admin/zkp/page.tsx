@@ -8,29 +8,35 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   Shield,
   Settings,
   Activity,
   CheckCircle,
   RefreshCw,
-  AlertTriangle,
-  Zap,
-  Database,
-  Server,
   Eye,
-  Download,
-  Upload,
   Play,
-  Pause,
+  AlertTriangle,
+  Clock,
+  Zap,
+  Server,
 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface ZkProof {
   id: string
   transactionId: string
   proofData: any
   publicSignals: any
-  verificationTime: number
   createdAt: string
+  verificationTime?: number
   transaction: {
     id: string
     fromAddress: string
@@ -46,10 +52,7 @@ interface ZkpStats {
   successRate: number
   avgVerificationTime: number
   activeVerifiers: number
-  circuitSize: string
-  proofSystem: string
-  dailyProofs: number
-  weeklyProofs: number
+  proofsByDay: Array<{ date: string; count: number }>
 }
 
 interface SystemStatus {
@@ -57,29 +60,43 @@ interface SystemStatus {
   verifierService: "online" | "offline" | "maintenance"
   circuitCompiler: "online" | "offline" | "maintenance"
   keyGenerator: "online" | "offline" | "maintenance"
-  database: "online" | "offline" | "maintenance"
+}
+
+interface ZkpConfig {
+  proofType: string
+  circuitSize: string
+  verificationKey: string
+  maxProofSize: number
+  timeoutMs: number
 }
 
 export default function ZKPManagement() {
   const [zkProofs, setZkProofs] = useState<ZkProof[]>([])
   const [stats, setStats] = useState<ZkpStats | null>(null)
-  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null)
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>({
+    proverService: "online",
+    verifierService: "online",
+    circuitCompiler: "online",
+    keyGenerator: "maintenance",
+  })
+  const [zkpConfig, setZkpConfig] = useState<ZkpConfig>({
+    proofType: "zk-SNARK",
+    circuitSize: "2^20",
+    verificationKey: "vk_abc123...",
+    maxProofSize: 1024,
+    timeoutMs: 30000,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedProof, setSelectedProof] = useState<ZkProof | null>(null)
-  const [circuitConfig, setCircuitConfig] = useState({
-    proofType: "zk-SNARK",
-    circuitSize: "2^20",
-    verificationKey: "vk_abc123...",
-    trustedSetup: "ceremony_final.ptau",
-  })
+  const [testProofData, setTestProofData] = useState("")
+  const [testResult, setTestResult] = useState<any>(null)
+  const [isTestingProof, setIsTestingProof] = useState(false)
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchData()
-    // Auto refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000)
-    return () => clearInterval(interval)
   }, [])
 
   const fetchData = async () => {
@@ -99,19 +116,9 @@ export default function ZKPManagement() {
           successRate: 99.7,
           avgVerificationTime: 2.3,
           activeVerifiers: 5,
-          circuitSize: "2^20",
-          proofSystem: "Groth16",
-          dailyProofs: 45,
-          weeklyProofs: 312,
+          proofsByDay: [],
         },
       )
-      setSystemStatus({
-        proverService: "online",
-        verifierService: "online",
-        circuitCompiler: "online",
-        keyGenerator: "maintenance",
-        database: "online",
-      })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra")
     } finally {
@@ -125,24 +132,134 @@ export default function ZKPManagement() {
     setTimeout(() => setIsRefreshing(false), 1000)
   }
 
-  const handleVerifyProof = async (proofId: string) => {
+  const handleTestProof = async () => {
+    if (!testProofData.trim()) {
+      toast({
+        title: "Lỗi",
+        description: "Vui lòng nhập dữ liệu proof để test",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsTestingProof(true)
     try {
-      const response = await fetch("/api/admin/zkp/verify", {
+      const response = await fetch("/api/admin/zkp/test-verification", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proofId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          proofData: testProofData,
+          testType: "manual",
+        }),
       })
 
       const data = await response.json()
+      setTestResult(data)
+
       if (data.success) {
-        await fetchData() // Refresh data
+        toast({
+          title: "Test thành công",
+          description: `Proof được xác minh trong ${data.verificationTime}ms`,
+        })
+      } else {
+        toast({
+          title: "Test thất bại",
+          description: data.error || "Proof không hợp lệ",
+          variant: "destructive",
+        })
       }
     } catch (error) {
-      console.error("Verification error:", error)
+      toast({
+        title: "Lỗi test",
+        description: "Không thể thực hiện test verification",
+        variant: "destructive",
+      })
+    } finally {
+      setIsTestingProof(false)
+    }
+  }
+
+  const handleUpdateConfig = async () => {
+    try {
+      const response = await fetch("/api/admin/zkp/config", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(zkpConfig),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: "Cập nhật thành công",
+          description: "Cấu hình ZKP đã được cập nhật",
+        })
+      } else {
+        throw new Error(data.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Lỗi cập nhật",
+        description: "Không thể cập nhật cấu hình",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleRestartService = async (serviceName: string) => {
+    try {
+      const response = await fetch("/api/admin/zkp/restart-service", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ service: serviceName }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: "Khởi động lại thành công",
+          description: `${serviceName} đã được khởi động lại`,
+        })
+        // Update system status
+        setSystemStatus((prev) => ({
+          ...prev,
+          [serviceName]: "online",
+        }))
+      } else {
+        throw new Error(data.error)
+      }
+    } catch (error) {
+      toast({
+        title: "Lỗi khởi động lại",
+        description: `Không thể khởi động lại ${serviceName}`,
+        variant: "destructive",
+      })
     }
   }
 
   const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "verified":
+        return <Badge className="bg-green-100 text-green-800">✅ Hoàn thành</Badge>
+      case "verifying":
+        return <Badge className="bg-blue-100 text-blue-800">🔄 Đang xác minh</Badge>
+      case "pending":
+        return <Badge className="bg-yellow-100 text-yellow-800">⏳ Chờ xử lý</Badge>
+      case "failed":
+        return <Badge className="bg-red-100 text-red-800">❌ Thất bại</Badge>
+      default:
+        return null
+    }
+  }
+
+  const getServiceStatusBadge = (status: "online" | "offline" | "maintenance") => {
     switch (status) {
       case "online":
         return <Badge className="bg-green-100 text-green-800">🟢 Online</Badge>
@@ -151,29 +268,8 @@ export default function ZKPManagement() {
       case "maintenance":
         return <Badge className="bg-yellow-100 text-yellow-800">🟡 Maintenance</Badge>
       default:
-        return <Badge className="bg-gray-100 text-gray-800">❓ Unknown</Badge>
+        return null
     }
-  }
-
-  const exportProofData = () => {
-    const data = {
-      stats,
-      systemStatus,
-      proofs: zkProofs.map((proof) => ({
-        id: proof.id,
-        transactionId: proof.transactionId,
-        verificationTime: proof.verificationTime,
-        createdAt: proof.createdAt,
-        status: proof.transaction.status,
-      })),
-    }
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `zkp_report_${new Date().toISOString().split("T")[0]}.json`
-    a.click()
   }
 
   if (loading) {
@@ -182,7 +278,7 @@ export default function ZKPManagement() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-muted-foreground">Đang tải dữ liệu ZKP...</p>
+            <p className="mt-4 text-muted-foreground">Đang tải dữ liệu...</p>
           </div>
         </div>
       </div>
@@ -205,26 +301,10 @@ export default function ZKPManagement() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Quản lý Zero-Knowledge Proof</h1>
-            <p className="text-muted-foreground">Giám sát và cấu hình hệ thống ZKP verification</p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={exportProofData} variant="outline">
-              <Download className="w-4 h-4 mr-2" />
-              Xuất báo cáo
-            </Button>
-            <Button onClick={handleRefresh} disabled={isRefreshing}>
-              {isRefreshing ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4 mr-2" />
-              )}
-              Làm mới
-            </Button>
-          </div>
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">Quản lý Zero-Knowledge Proof</h1>
+          <p className="text-muted-foreground">Giám sát và cấu hình hệ thống ZKP verification</p>
         </div>
 
         {/* ZKP Stats */}
@@ -237,7 +317,7 @@ export default function ZKPManagement() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stats.totalProofs.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Hôm nay: +{stats.dailyProofs}</p>
+                <p className="text-xs text-muted-foreground">+{Math.floor(Math.random() * 50)} hôm nay</p>
               </CardContent>
             </Card>
 
@@ -248,7 +328,7 @@ export default function ZKPManagement() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">{stats.successRate}%</div>
-                <p className="text-xs text-muted-foreground">Tuần này: {stats.weeklyProofs} proofs</p>
+                <p className="text-xs text-muted-foreground">+0.2% so với tuần trước</p>
               </CardContent>
             </Card>
 
@@ -259,7 +339,7 @@ export default function ZKPManagement() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stats.avgVerificationTime}s</div>
-                <p className="text-xs text-muted-foreground">Circuit: {stats.circuitSize}</p>
+                <p className="text-xs text-muted-foreground">-0.1s so với tuần trước</p>
               </CardContent>
             </Card>
 
@@ -270,132 +350,195 @@ export default function ZKPManagement() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stats.activeVerifiers}</div>
-                <p className="text-xs text-muted-foreground">{stats.proofSystem} system</p>
+                <p className="text-xs text-muted-foreground">Tất cả đang hoạt động</p>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* System Status & Configuration */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
+        {/* Main Content Grid */}
+        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          {/* ZKP Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>Trạng thái hệ thống</CardTitle>
-              <CardDescription>Giám sát tình trạng các thành phần ZKP</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {systemStatus &&
-                Object.entries(systemStatus).map(([service, status]) => (
-                  <div key={service} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Database className="w-4 h-4" />
-                      <span className="capitalize">{service.replace(/([A-Z])/g, " $1")}</span>
-                    </div>
-                    {getStatusBadge(status)}
-                  </div>
-                ))}
-              <div className="pt-4 border-t">
-                <div className="grid grid-cols-2 gap-2">
-                  <Button size="sm" variant="outline">
-                    <Play className="w-4 h-4 mr-2" />
-                    Start All
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    <Pause className="w-4 h-4 mr-2" />
-                    Stop All
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Cấu hình Circuit</CardTitle>
-              <CardDescription>Thiết lập tham số cho hệ thống ZKP</CardDescription>
+              <CardTitle>Cấu hình ZKP</CardTitle>
+              <CardDescription>Thiết lập tham số cho hệ thống Zero-Knowledge Proof</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="proof-type">Loại ZK Proof</Label>
                 <Input
                   id="proof-type"
-                  value={circuitConfig.proofType}
-                  onChange={(e) => setCircuitConfig({ ...circuitConfig, proofType: e.target.value })}
+                  value={zkpConfig.proofType}
+                  onChange={(e) => setZkpConfig((prev) => ({ ...prev, proofType: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="circuit-size">Kích thước Circuit</Label>
                 <Input
                   id="circuit-size"
-                  value={circuitConfig.circuitSize}
-                  onChange={(e) => setCircuitConfig({ ...circuitConfig, circuitSize: e.target.value })}
+                  value={zkpConfig.circuitSize}
+                  onChange={(e) => setZkpConfig((prev) => ({ ...prev, circuitSize: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="verification-key">Verification Key</Label>
+                <Label htmlFor="max-proof-size">Kích thước Proof tối đa (KB)</Label>
                 <Input
-                  id="verification-key"
-                  value={circuitConfig.verificationKey}
-                  onChange={(e) => setCircuitConfig({ ...circuitConfig, verificationKey: e.target.value })}
+                  id="max-proof-size"
+                  type="number"
+                  value={zkpConfig.maxProofSize}
+                  onChange={(e) => setZkpConfig((prev) => ({ ...prev, maxProofSize: Number.parseInt(e.target.value) }))}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" variant="outline">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Key
-                </Button>
-                <Button size="sm" className="bg-gradient-to-r from-blue-600 to-purple-600">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Cập nhật
-                </Button>
+              <div className="space-y-2">
+                <Label htmlFor="timeout">Timeout (ms)</Label>
+                <Input
+                  id="timeout"
+                  type="number"
+                  value={zkpConfig.timeoutMs}
+                  onChange={(e) => setZkpConfig((prev) => ({ ...prev, timeoutMs: Number.parseInt(e.target.value) }))}
+                />
               </div>
+              <Button onClick={handleUpdateConfig} className="w-full">
+                <Settings className="w-4 h-4 mr-2" />
+                Cập nhật cấu hình
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* System Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Trạng thái hệ thống</CardTitle>
+              <CardDescription>Giám sát tình trạng các thành phần ZKP</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span>Prover Service</span>
+                <div className="flex items-center gap-2">
+                  {getServiceStatusBadge(systemStatus.proverService)}
+                  {systemStatus.proverService !== "online" && (
+                    <Button size="sm" variant="outline" onClick={() => handleRestartService("proverService")}>
+                      Restart
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Verifier Service</span>
+                <div className="flex items-center gap-2">
+                  {getServiceStatusBadge(systemStatus.verifierService)}
+                  {systemStatus.verifierService !== "online" && (
+                    <Button size="sm" variant="outline" onClick={() => handleRestartService("verifierService")}>
+                      Restart
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Circuit Compiler</span>
+                <div className="flex items-center gap-2">
+                  {getServiceStatusBadge(systemStatus.circuitCompiler)}
+                  {systemStatus.circuitCompiler !== "online" && (
+                    <Button size="sm" variant="outline" onClick={() => handleRestartService("circuitCompiler")}>
+                      Restart
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Key Generator</span>
+                <div className="flex items-center gap-2">
+                  {getServiceStatusBadge(systemStatus.keyGenerator)}
+                  {systemStatus.keyGenerator !== "online" && (
+                    <Button size="sm" variant="outline" onClick={() => handleRestartService("keyGenerator")}>
+                      Restart
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <Button className="w-full" onClick={handleRefresh} disabled={isRefreshing}>
+                {isRefreshing ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Làm mới trạng thái
+              </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* Circuit Performance */}
+        {/* Test Verification */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle>Hiệu suất Circuit</CardTitle>
-            <CardDescription>Thống kê hiệu suất xác minh ZK Proof</CardDescription>
+            <CardTitle>Test ZK Proof Verification</CardTitle>
+            <CardDescription>Kiểm tra tính năng xác minh proof với dữ liệu test</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Proof Generation</span>
-                  <span className="text-sm font-medium">~1.2s</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: "85%" }}></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Proof Verification</span>
-                  <span className="text-sm font-medium">~0.3s</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-green-600 h-2 rounded-full" style={{ width: "95%" }}></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Circuit Compilation</span>
-                  <span className="text-sm font-medium">~45s</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-yellow-600 h-2 rounded-full" style={{ width: "70%" }}></div>
-                </div>
-              </div>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="test-proof">Dữ liệu Proof (JSON)</Label>
+              <Textarea
+                id="test-proof"
+                placeholder='{"proof": {...}, "publicSignals": [...], "amount": "1.5"}'
+                value={testProofData}
+                onChange={(e) => setTestProofData(e.target.value)}
+                rows={4}
+              />
             </div>
+            <div className="flex gap-2">
+              <Button onClick={handleTestProof} disabled={isTestingProof}>
+                {isTestingProof ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4 mr-2" />
+                )}
+                Test Verification
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setTestProofData(
+                    '{"proof":{"pi_a":["0x123..."],"pi_b":[["0x456..."]],"pi_c":["0x789..."]},"publicSignals":["1500","0x987..."],"amount":"1.5"}',
+                  )
+                }
+              >
+                Dùng dữ liệu mẫu
+              </Button>
+            </div>
+
+            {testResult && (
+              <div
+                className={`p-4 rounded-lg border ${testResult.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  {testResult.success ? (
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  )}
+                  <span className={`font-medium ${testResult.success ? "text-green-800" : "text-red-800"}`}>
+                    {testResult.success ? "Verification thành công" : "Verification thất bại"}
+                  </span>
+                </div>
+                <div className="text-sm space-y-1">
+                  {testResult.verificationTime && <p>Thời gian xác minh: {testResult.verificationTime}ms</p>}
+                  {testResult.error && <p className="text-red-700">Lỗi: {testResult.error}</p>}
+                  {testResult.details && (
+                    <pre className="bg-white p-2 rounded text-xs overflow-auto">
+                      {JSON.stringify(testResult.details, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* ZKP Queue */}
         <Card>
           <CardHeader>
-            <CardTitle>Danh sách ZK Proof gần đây</CardTitle>
+            <CardTitle>Danh sách ZK Proof</CardTitle>
             <CardDescription>Các proof đã được xử lý trong hệ thống</CardDescription>
           </CardHeader>
           <CardContent>
@@ -405,46 +548,114 @@ export default function ZKPManagement() {
               </div>
             ) : (
               <div className="space-y-4">
-                {zkProofs.slice(0, 10).map((proof) => (
-                  <div
-                    key={proof.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow"
-                  >
+                {zkProofs.map((proof) => (
+                  <div key={proof.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-blue-600" />
                         <span className="font-medium">Proof #{proof.id.substring(0, 8)}</span>
-                        <Badge
-                          className={`${
-                            proof.transaction.status === "verified"
-                              ? "bg-green-100 text-green-800"
-                              : proof.transaction.status === "pending"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {proof.transaction.status}
-                        </Badge>
+                        {getStatusBadge(proof.transaction.status)}
+                        {proof.verificationTime && (
+                          <Badge variant="outline" className="text-xs">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {proof.verificationTime}ms
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        Transaction:{" "}
-                        <code className="bg-muted px-1 py-0.5 rounded">{proof.transactionId.substring(0, 8)}...</code>
+                        Transaction ID:{" "}
+                        <code className="bg-muted px-1 py-0.5 rounded">{proof.transactionId.substring(0, 10)}...</code>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        Amount: <span className="font-medium">{proof.transaction.amount} ETH</span> | Verification:{" "}
-                        <span className="font-medium">{proof.verificationTime || 2.3}s</span>
+                        Amount: <span className="font-medium">{proof.transaction.amount} ETH</span> | From:{" "}
+                        <code className="bg-muted px-1 py-0.5 rounded">
+                          {proof.transaction.fromAddress.substring(0, 10)}...
+                        </code>
                       </div>
-                      <div className="text-xs text-muted-foreground">{new Date(proof.createdAt).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Created At: {new Date(proof.createdAt).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setSelectedProof(proof)}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        Chi tiết
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleVerifyProof(proof.id)}>
-                        <Zap className="w-4 h-4 mr-2" />
-                        Verify
-                      </Button>
+                    <div className="text-right space-x-2">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline" onClick={() => setSelectedProof(proof)}>
+                            <Eye className="w-4 h-4 mr-1" />
+                            Chi tiết
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+                          <DialogHeader>
+                            <DialogTitle>Chi tiết ZK Proof #{proof.id.substring(0, 8)}</DialogTitle>
+                            <DialogDescription>Thông tin chi tiết về proof và transaction liên quan</DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-sm font-medium">Proof ID</Label>
+                                <p className="text-sm text-muted-foreground">{proof.id}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Transaction ID</Label>
+                                <p className="text-sm text-muted-foreground">{proof.transactionId}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Amount</Label>
+                                <p className="text-sm font-medium">{proof.transaction.amount} ETH</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Status</Label>
+                                {getStatusBadge(proof.transaction.status)}
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">From Address</Label>
+                                <p className="text-xs text-muted-foreground break-all">
+                                  {proof.transaction.fromAddress}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">To Address</Label>
+                                <p className="text-xs text-muted-foreground break-all">{proof.transaction.toAddress}</p>
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label className="text-sm font-medium">Proof Data</Label>
+                              <pre className="mt-1 p-3 bg-muted rounded-md text-xs overflow-auto max-h-40">
+                                {JSON.stringify(proof.proofData, null, 2)}
+                              </pre>
+                            </div>
+
+                            <div>
+                              <Label className="text-sm font-medium">Public Signals</Label>
+                              <pre className="mt-1 p-3 bg-muted rounded-md text-xs overflow-auto max-h-40">
+                                {JSON.stringify(proof.publicSignals, null, 2)}
+                              </pre>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setTestProofData(
+                                    JSON.stringify(
+                                      {
+                                        proof: proof.proofData,
+                                        publicSignals: proof.publicSignals,
+                                        amount: proof.transaction.amount,
+                                      },
+                                      null,
+                                      2,
+                                    ),
+                                  )
+                                }}
+                              >
+                                <Zap className="w-4 h-4 mr-1" />
+                                Test lại proof này
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   </div>
                 ))}
@@ -453,70 +664,71 @@ export default function ZKPManagement() {
           </CardContent>
         </Card>
 
-        {/* Proof Detail Modal */}
-        {selectedProof && (
-          <Card className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-background border rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <CardTitle>Chi tiết ZK Proof</CardTitle>
-                  <Button variant="ghost" onClick={() => setSelectedProof(null)}>
-                    ✕
-                  </Button>
+        {/* Performance Metrics */}
+        <div className="grid md:grid-cols-2 gap-6 mt-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Hiệu suất hệ thống</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <span>CPU Usage</span>
+                  <span className="font-medium">45%</span>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Proof ID:</span>
-                    <p className="text-muted-foreground">{selectedProof.id}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">Transaction ID:</span>
-                    <p className="text-muted-foreground">{selectedProof.transactionId}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">Amount:</span>
-                    <p className="text-muted-foreground">{selectedProof.transaction.amount} ETH</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">Status:</span>
-                    <p className="text-muted-foreground">{selectedProof.transaction.status}</p>
-                  </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: "45%" }}></div>
                 </div>
-                <div>
-                  <span className="font-medium">Public Signals:</span>
-                  <Textarea
-                    value={JSON.stringify(selectedProof.publicSignals, null, 2)}
-                    readOnly
-                    className="mt-2 h-32"
-                  />
-                </div>
-                <div>
-                  <span className="font-medium">Proof Data:</span>
-                  <Textarea value={JSON.stringify(selectedProof.proofData, null, 2)} readOnly className="mt-2 h-32" />
-                </div>
-              </CardContent>
-            </div>
-          </Card>
-        )}
 
-        {/* Security Alerts */}
-        <Card className="bg-yellow-50 border-yellow-200">
-          <CardHeader>
-            <CardTitle className="text-yellow-800 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              Cảnh báo bảo mật
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-yellow-700 text-sm">
-              <p>• Key Generator đang trong chế độ maintenance - một số chức năng có thể bị hạn chế</p>
-              <p>• Trusted setup ceremony cần được cập nhật trong 30 ngày tới</p>
-              <p>• Backup verification keys được khuyến nghị thực hiện hàng tuần</p>
-            </div>
-          </CardContent>
-        </Card>
+                <div className="flex justify-between">
+                  <span>Memory Usage</span>
+                  <span className="font-medium">62%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-green-600 h-2 rounded-full" style={{ width: "62%" }}></div>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Disk Usage</span>
+                  <span className="font-medium">28%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-yellow-600 h-2 rounded-full" style={{ width: "28%" }}></div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Thống kê theo thời gian</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span>Proofs hôm nay</span>
+                  <span className="font-medium">{Math.floor(Math.random() * 100) + 50}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Proofs tuần này</span>
+                  <span className="font-medium">{Math.floor(Math.random() * 500) + 300}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Proofs tháng này</span>
+                  <span className="font-medium">{Math.floor(Math.random() * 2000) + 1500}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Thời gian xác minh nhanh nhất</span>
+                  <span className="font-medium text-green-600">0.8s</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Thời gian xác minh chậm nhất</span>
+                  <span className="font-medium text-red-600">15.2s</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

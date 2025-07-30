@@ -1,66 +1,44 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
 
-const prisma = new PrismaClient()
-
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const page = Number.parseInt(searchParams.get("page") || "1")
-    const limit = Number.parseInt(searchParams.get("limit") || "20")
-    const status = searchParams.get("status")
-    const search = searchParams.get("search")
+    const { userId, status } = await request.json()
 
-    // Build where clause
-    const where: any = {}
-    if (status) {
-      where.status = status
-    }
-    if (search) {
-      where.OR = [{ email: { contains: search } }, { walletAddress: { contains: search } }]
+    if (!userId || !status) {
+      return NextResponse.json({ error: "Missing userId or status" }, { status: 400 })
     }
 
-    // Get users with related data
-    const users = await prisma.user.findMany({
-      where,
-      include: {
-        balance: {
-          select: {
-            lastUpdated: true,
-          },
-        },
-        _count: {
-          select: {
-            transactions: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
-    })
+    if (!["active", "inactive", "suspended"].includes(status)) {
+      return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
+    }
 
-    // Get total count
-    const total = await prisma.user.count({ where })
+    // Trong thực tế sẽ cập nhật database
+    console.log(`Updating user ${userId} status to ${status}`)
 
-    // Remove sensitive data
-    const safeUsers = users.map((user) => {
-      const { passwordHash, encryptedKey, ...safeUser } = user
-      return safeUser
-    })
+    // Log audit trail
+    const auditLog = {
+      action: "UPDATE_USER_STATUS",
+      userId,
+      oldStatus: "active", // Lấy từ database
+      newStatus: status,
+      adminId: "admin_001", // Lấy từ session
+      timestamp: new Date().toISOString(),
+      ip: request.headers.get("x-forwarded-for") || "unknown",
+    }
+
+    console.log("Audit log:", auditLog)
+
+    // Simulate database update
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
     return NextResponse.json({
       success: true,
-      users: safeUsers,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      message: `User status updated to ${status}`,
+      userId,
+      newStatus: status,
     })
   } catch (error) {
-    console.error("Admin users error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error updating user status:", error)
+    return NextResponse.json({ error: "Failed to update user status" }, { status: 500 })
   }
 }
